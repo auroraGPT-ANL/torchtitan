@@ -559,7 +559,13 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                         self.step, job_config.blendcorpus.global_batch_size
                     )
                 logger.info(
-                    f"BlendCorpus dataloader advanced to consumed={self.step * job_config.blendcorpus.global_batch_size} samples (step={self.step})."
+                    " ".join(
+                        [
+                            "BlendCorpus dataloader advanced to consumed",
+                            f"={self.step * job_config.blendcorpus.global_batch_size} samples",
+                            "(step={self.step}).",
+                        ]
+                    )
                 )
         except Exception as _e:
             logger.warning(f"BlendCorpus retarget hook failed: {_e}")
