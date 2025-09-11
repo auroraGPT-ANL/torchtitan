@@ -4,12 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import os
 from typing import Generator
 
-import torch
-import torch.nn as nn
-from torch.distributed.fsdp import FSDPModule
 from torch.distributed.pipelining.schedules import _PipelineSchedule
 
 from torchtitan.components.dataloader import BaseDataLoader
@@ -18,7 +14,7 @@ from torchtitan.components.metrics import MetricsProcessor
 from torchtitan.components.tokenizer import BaseTokenizer
 from torchtitan.components.validate import Validator
 from torchtitan.config import JobConfig
-from torchtitan.distributed import ParallelDims, utils as dist_utils
+from torchtitan.distributed import ParallelDims
 
 
 class BlendCorpusValidator(Validator):

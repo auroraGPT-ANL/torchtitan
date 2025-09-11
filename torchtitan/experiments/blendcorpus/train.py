@@ -87,7 +87,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             logger.info(f"Running with args: {job_config.to_dict()}")
 
         device_module, device_type = utils.device_module, utils.device_type
-        from blendcorpus.dist_setup import init_distributed, get_device, get_device_type
+        from blendcorpus.dist_setup import get_device, init_distributed
 
         self.device = get_device()
         # self.device = torch.device(f"{device_type}:{int(os.environ['LOCAL_RANK'])}")
@@ -616,8 +616,9 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                 )
 
                 # Run validation if validator is available
-                if self.job_config.validation.enable and self.validator.should_validate(
-                    self.step
+                if (
+                    self.job_config.validation.enable
+                    and self.validator.should_validate(self.step)
                 ):
                     self.validator.validate(self.model_parts, self.step)
 
@@ -668,19 +669,18 @@ if __name__ == "__main__":
         trainer = Trainer(config)
 
         if config.checkpoint.create_seed_checkpoint:
-            assert int(os.environ["WORLD_SIZE"]) == 1, (
-                "Must create seed checkpoint using a single device, to disable sharding."
-            )
-            assert config.checkpoint.enable, (
-                "Must enable checkpointing when creating a seed checkpoint."
-            )
+            assert (
+                int(os.environ["WORLD_SIZE"]) == 1
+            ), "Must create seed checkpoint using a single device, to disable sharding."
+            assert (
+                config.checkpoint.enable
+            ), "Must enable checkpointing when creating a seed checkpoint."
             trainer.checkpointer.save(curr_step=0, last_step=True)
             logger.info("Created seed checkpoint")
         else:
             try:
-                logger.info(f"Using SDPBackend.FLASH_ATTENTION backend for SDPA")
-                from torch.nn.functional import scaled_dot_product_attention
-                from torch.nn.attention import SDPBackend, sdpa_kernel
+                logger.info("Using SDPBackend.FLASH_ATTENTION backend for SDPA")
+                from torch.nn.attention import sdpa_kernel, SDPBackend
 
                 with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
                     trainer.train()

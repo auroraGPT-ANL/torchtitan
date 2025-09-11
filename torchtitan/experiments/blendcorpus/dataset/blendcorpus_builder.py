@@ -1,7 +1,5 @@
 # torchtitan_ext/datasets/blendcorpus_builder.py
-import math
-from types import SimpleNamespace
-from typing import Tuple, Optional, Dict
+from typing import Optional, Dict, Tuple
 
 import torch
 from torch.utils.data import DataLoader
@@ -63,11 +61,6 @@ def _maybe_attention_mask(
         eod_mask_loss,
     )
     return attn_mask  # [B, 1, T, T] causal mask
-
-
-# --- put this at module scope (e.g., above build_blendcorpus_dataloader) ---
-from typing import Optional, Tuple, Dict
-from torch.utils.data import DataLoader
 
 
 class AdapterDL:

@@ -1,14 +1,21 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 # torchtitan/datasets/tokenizer/sptoken.py
 import os
 from typing import List
+
 import sentencepiece as spm
 
 
 class SPTokenizer:
     def __init__(self, model_path: str):
-        assert isinstance(model_path, (str, os.PathLike)) and model_path, (
-            f"SP model path must be a non-empty string, got: {model_path!r}"
-        )
+        assert (
+            isinstance(model_path, (str, os.PathLike)) and model_path
+        ), f"SP model path must be a non-empty string, got: {model_path!r}"
         model_path = str(model_path)
         # Accept a directory containing tokenizer.model or a direct .model file
         spm_file = (
@@ -42,9 +49,9 @@ class SPTokenizer:
         # Safety: range check
         if ids:
             mn, mx = min(ids), max(ids)
-            assert mn >= 0 and mx < self.vocab_size, (
-                f"Token IDs out of range: min={mn}, max={mx}, vocab_size={self.vocab_size}"
-            )
+            assert (
+                mn >= 0 and mx < self.vocab_size
+            ), f"Token IDs out of range: min={mn}, max={mx}, vocab_size={self.vocab_size}"
         return ids
 
     def decode(self, ids: list[int]) -> str:
@@ -56,8 +63,8 @@ def build_sentencepiece_tokenizer(job_config):
     model_path = getattr(job_config.model, "tokenizer_path", None) or getattr(
         job_config.model, "hf_assets_path", None
     )
-    assert model_path, (
-        "Neither job_config.model.tokenizer_path nor job_config.model.hf_assets_path is set for SentencePiece tokenizer."
-    )
+    assert (
+        model_path
+    ), "Neither job_config.model.tokenizer_path nor job_config.model.hf_assets_path is set for SentencePiece tokenizer."
     print(f"[SPTokenizer] Using model path: {model_path}")
     return SPTokenizer(model_path)

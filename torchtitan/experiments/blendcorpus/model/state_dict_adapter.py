@@ -8,11 +8,11 @@ import logging
 import re
 from typing import Any
 
-logger = logging.getLogger()
-
 from torchtitan.protocols.state_dict_adapter import StateDictAdapter
 
 from .args import TransformerModelArgs
+
+logger = logging.getLogger()
 
 
 class Llama3StateDictAdapter(StateDictAdapter):

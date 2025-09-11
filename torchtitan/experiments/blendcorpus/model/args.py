@@ -68,7 +68,7 @@ class TransformerModelArgs(BaseModelArgs):
             if isinstance(m, nn.Embedding)
         )
 
-        l, h, q, t = (
+        l, h, q, t = (  # noqa: E741
             self.n_layers,
             self.n_heads,
             self.dim // self.n_heads,
