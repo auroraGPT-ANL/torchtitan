@@ -27,6 +27,7 @@ from torchtitan.config import ConfigManager, JobConfig
 from torchtitan.distributed import ParallelDims, utils as dist_utils
 from torchtitan.protocols.model_converter import build_model_converters
 from torchtitan.tools import utils
+
 # from torchtitan.tools.logging import init_logger, logger
 from torchtitan.tools.profiling import (
     maybe_enable_memory_snapshot,
@@ -35,7 +36,6 @@ from torchtitan.tools.profiling import (
 
 
 logger = ezpz.get_logger(__name__)
-
 
 
 class Trainer(torch.distributed.checkpoint.stateful.Stateful):
@@ -87,9 +87,10 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             logger.info(f"Running with args: {job_config.to_dict()}")
 
         device_module, device_type = utils.device_module, utils.device_type
-        from blendcorpus.dist_setup import init_distributed, get_device, get_device_type                
+        from blendcorpus.dist_setup import init_distributed, get_device, get_device_type
+
         self.device = get_device()
-        #self.device = torch.device(f"{device_type}:{int(os.environ['LOCAL_RANK'])}")
+        # self.device = torch.device(f"{device_type}:{int(os.environ['LOCAL_RANK'])}")
         # Device has to be set before creating TorchFT manager.
         device_module.set_device(self.device)
         dist, rank, world_size = init_distributed()
@@ -99,7 +100,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             enable_cpu_backend=job_config.training.enable_cpu_offload,
             base_folder=job_config.job.dump_folder,
         )
-        #world_size = int(os.environ["WORLD_SIZE"])
+        # world_size = int(os.environ["WORLD_SIZE"])
         parallelism_config = job_config.parallelism
         self.parallel_dims = parallel_dims = ParallelDims(
             dp_shard=parallelism_config.data_parallel_shard_degree,
@@ -158,7 +159,9 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             f"% ({job_config.training.local_batch_size} * {dp_degree}) != 0)"
         )
         # --- BlendCorpus integration ---
-        train_dl, valid_dl, test_dl = self.train_spec.build_dataloader_fn(job_config, global_batch_size)  # returns (train, valid, test)
+        train_dl, valid_dl, test_dl = self.train_spec.build_dataloader_fn(
+            job_config, global_batch_size
+        )  # returns (train, valid, test)
         self.dataloader = train_dl
         # If your Trainer uses eval/test loaders, surface them too:
         self.eval_dataloader = valid_dl if valid_dl is not None else None
@@ -215,8 +218,6 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             buffer_device = None
 
         self.loss_fn = self.train_spec.build_loss_fn(job_config)
-
-
 
         # calculate gradient accumulation steps
         self.gradient_accumulation_steps = global_batch_size // (
@@ -542,14 +543,24 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         self.checkpointer.load(step=job_config.checkpoint.load_step)
         # If using BlendCorpus, retarget the dataloader to the restored step.
         try:
-            ds_name = getattr(getattr(self.job_config, "training", object()), "dataset", "").strip().lower()
-            if ds_name == "blendcorpus" and hasattr(self.dataloader, "set_consumed_by_global_step"):
-                self.dataloader.set_consumed_by_global_step(self.step, job_config.blendcorpus.global_batch_size)
+            ds_name = (
+                getattr(getattr(self.job_config, "training", object()), "dataset", "")
+                .strip()
+                .lower()
+            )
+            if ds_name == "blendcorpus" and hasattr(
+                self.dataloader, "set_consumed_by_global_step"
+            ):
+                self.dataloader.set_consumed_by_global_step(
+                    self.step, job_config.blendcorpus.global_batch_size
+                )
                 if self.eval_dataloader is not None:
                     self.eval_dataloader.set_consumed_by_global_step(
                         self.step, job_config.blendcorpus.global_batch_size
                     )
-                logger.info(f"BlendCorpus dataloader advanced to consumed={self.step * job_config.blendcorpus.global_batch_size} samples (step={self.step}).")
+                logger.info(
+                    f"BlendCorpus dataloader advanced to consumed={self.step * job_config.blendcorpus.global_batch_size} samples (step={self.step})."
+                )
         except Exception as _e:
             logger.warning(f"BlendCorpus retarget hook failed: {_e}")
 
@@ -605,9 +616,8 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                 )
 
                 # Run validation if validator is available
-                if (
-                    self.job_config.validation.enable
-                    and self.validator.should_validate(self.step)
+                if self.job_config.validation.enable and self.validator.should_validate(
+                    self.step
                 ):
                     self.validator.validate(self.model_parts, self.step)
 
@@ -658,12 +668,12 @@ if __name__ == "__main__":
         trainer = Trainer(config)
 
         if config.checkpoint.create_seed_checkpoint:
-            assert (
-                int(os.environ["WORLD_SIZE"]) == 1
-            ), "Must create seed checkpoint using a single device, to disable sharding."
-            assert (
-                config.checkpoint.enable
-            ), "Must enable checkpointing when creating a seed checkpoint."
+            assert int(os.environ["WORLD_SIZE"]) == 1, (
+                "Must create seed checkpoint using a single device, to disable sharding."
+            )
+            assert config.checkpoint.enable, (
+                "Must enable checkpointing when creating a seed checkpoint."
+            )
             trainer.checkpointer.save(curr_step=0, last_step=True)
             logger.info("Created seed checkpoint")
         else:
@@ -671,6 +681,7 @@ if __name__ == "__main__":
                 logger.info(f"Using SDPBackend.FLASH_ATTENTION backend for SDPA")
                 from torch.nn.functional import scaled_dot_product_attention
                 from torch.nn.attention import SDPBackend, sdpa_kernel
+
                 with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
                     trainer.train()
             except Exception:

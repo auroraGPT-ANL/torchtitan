@@ -8,7 +8,9 @@ from torchtitan.components.loss import build_cross_entropy_loss
 from torchtitan.components.lr_scheduler import build_lr_schedulers
 from torchtitan.components.optimizer import build_optimizers
 from torchtitan.experiments.blendcorpus.validate import build_blendcorpus_validator
-from torchtitan.experiments.blendcorpus.dataset.blendcorpus_builder import build_blendcorpus_dataloader
+from torchtitan.experiments.blendcorpus.dataset.blendcorpus_builder import (
+    build_blendcorpus_dataloader,
+)
 from torchtitan.experiments.blendcorpus.dataset.build_tokenizer import build_tokenizer
 from torchtitan.protocols.train_spec import register_train_spec, TrainSpec
 

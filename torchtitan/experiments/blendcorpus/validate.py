@@ -20,6 +20,7 @@ from torchtitan.components.validate import Validator
 from torchtitan.config import JobConfig
 from torchtitan.distributed import ParallelDims, utils as dist_utils
 
+
 class BlendCorpusValidator(Validator):
     """
     Simple validator focused on correctness and integration.
@@ -32,11 +33,13 @@ class BlendCorpusValidator(Validator):
     """
 
     validation_dataloader: BaseDataLoader
+
     def blendcorpus_init(
         self,
         validation_dataloader: BaseDataLoader,
     ):
         self.validation_dataloader = validation_dataloader
+
 
 def build_blendcorpus_validator(
     job_config: JobConfig,

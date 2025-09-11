@@ -12,6 +12,7 @@ from typing import Any, Literal
 class Model:
     tokenizer_backend: str = "sptoken"
 
+
 # --- BEGIN BlendCorpus dataclass ---
 @dataclass
 class BlendCorpus:
@@ -61,6 +62,8 @@ class BlendCorpus:
     """Optional explicit EOD token id; if None the adapter/tokenizer decides."""
 
     data_cache_path: str = None
+
+
 # --- END BlendCorpus dataclass ---
 
 

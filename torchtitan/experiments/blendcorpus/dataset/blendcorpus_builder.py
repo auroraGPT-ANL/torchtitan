@@ -31,15 +31,18 @@ from blendcorpus.data.data_samplers import build_pretraining_data_loader
 from blendcorpus.data.config import get_config as bc_get_config
 from blendcorpus.data.config import set_config as bc_set_config
 from blendcorpus.utils import get_ltor_masks_and_position_ids as bc_get_masks
+
+
 def cyclic_iter(iter):
     while True:
         for x in iter:
             yield x
 
+
 def _shift_tokens_to_labels(tokens: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     # tokens: [B, T]
     input_ids = tokens[:, :-1].contiguous()
-    labels    = tokens[:, 1:].contiguous()
+    labels = tokens[:, 1:].contiguous()
     return input_ids, labels
 
 
@@ -61,9 +64,11 @@ def _maybe_attention_mask(
     )
     return attn_mask  # [B, 1, T, T] causal mask
 
+
 # --- put this at module scope (e.g., above build_blendcorpus_dataloader) ---
 from typing import Optional, Tuple, Dict
 from torch.utils.data import DataLoader
+
 
 class AdapterDL:
     """
@@ -73,6 +78,7 @@ class AdapterDL:
       - is picklable (top-level class),
       - can optionally checkpoint only a small state dict.
     """
+
     def __init__(self, dl: DataLoader, *, ds, bc_cfg):
         self.dl = dl
         self._ds = ds
@@ -92,7 +98,7 @@ class AdapterDL:
             # BC batch: {"dataset_idx": [B], "text": Long[B, T]}
             tokens = batch["text"].long()
             input_ids = tokens[:, :-1].contiguous()
-            labels    = tokens[:,  1:].contiguous()
+            labels = tokens[:, 1:].contiguous()
             # Many TorchTitan paths expect dict-like batches; keep both fields together.
             yield {"input": input_ids}, labels
 
@@ -114,8 +120,12 @@ class AdapterDL:
         if cs != self._consumed_samples:
             self._consumed_samples = cs
             self.dl = build_pretraining_data_loader(self._ds, cs, self._bc_cfg)
+
+
 # --- end top-level class ---
-def build_blendcorpus_dataloader(cfg, global_batch_size: int) -> Tuple[DataLoader, DataLoader, DataLoader]:
+def build_blendcorpus_dataloader(
+    cfg, global_batch_size: int
+) -> Tuple[DataLoader, DataLoader, DataLoader]:
     # Map TorchTitan config → BlendCorpus config
     cfg.blendcorpus.seq_length = getattr(cfg.training, "seq_len")
     cfg.blendcorpus.data_file_list = getattr(cfg.training, "dataset_path")
@@ -123,9 +133,11 @@ def build_blendcorpus_dataloader(cfg, global_batch_size: int) -> Tuple[DataLoade
     cfg.blendcorpus.micro_batch_size = int(getattr(cfg.training, "local_batch_size"))
     cfg.blendcorpus.global_batch_size = int(global_batch_size)
 
-    cfg.blendcorpus.tensor_model_parallel_size   = cfg.parallelism.tensor_parallel_degree
-    cfg.blendcorpus.pipeline_model_parallel_size = cfg.parallelism.pipeline_parallel_degree
-    cfg.blendcorpus.sequence_parallel_size       = cfg.parallelism.context_parallel_degree
+    cfg.blendcorpus.tensor_model_parallel_size = cfg.parallelism.tensor_parallel_degree
+    cfg.blendcorpus.pipeline_model_parallel_size = (
+        cfg.parallelism.pipeline_parallel_degree
+    )
+    cfg.blendcorpus.sequence_parallel_size = cfg.parallelism.context_parallel_degree
 
     bc_mpu.initialize_model_parallel(
         tensor_model_parallel_size=cfg.blendcorpus.tensor_model_parallel_size,
@@ -140,11 +152,25 @@ def build_blendcorpus_dataloader(cfg, global_batch_size: int) -> Tuple[DataLoade
     train_ds, valid_ds, test_ds = build_gpt_datasets(bc_cfg)
 
     train_loader = build_pretraining_data_loader(train_ds, 0, bc_cfg)
-    valid_loader = build_pretraining_data_loader(valid_ds, 0, bc_cfg) if valid_ds is not None else None
-    test_loader  = build_pretraining_data_loader(test_ds,  0, bc_cfg) if test_ds  is not None else None
+    valid_loader = (
+        build_pretraining_data_loader(valid_ds, 0, bc_cfg)
+        if valid_ds is not None
+        else None
+    )
+    test_loader = (
+        build_pretraining_data_loader(test_ds, 0, bc_cfg)
+        if test_ds is not None
+        else None
+    )
 
     return (
-        AdapterDL(train_loader, ds=train_ds,  bc_cfg=bc_cfg) if train_loader is not None else None,
-        AdapterDL(valid_loader, ds=valid_ds,  bc_cfg=bc_cfg) if valid_loader is not None else None,
-        AdapterDL(test_loader,  ds=test_ds,   bc_cfg=bc_cfg) if test_loader  is not None else None,
+        AdapterDL(train_loader, ds=train_ds, bc_cfg=bc_cfg)
+        if train_loader is not None
+        else None,
+        AdapterDL(valid_loader, ds=valid_ds, bc_cfg=bc_cfg)
+        if valid_loader is not None
+        else None,
+        AdapterDL(test_loader, ds=test_ds, bc_cfg=bc_cfg)
+        if test_loader is not None
+        else None,
     )

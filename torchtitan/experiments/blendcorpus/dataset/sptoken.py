@@ -3,12 +3,19 @@ import os
 from typing import List
 import sentencepiece as spm
 
+
 class SPTokenizer:
     def __init__(self, model_path: str):
-        assert isinstance(model_path, (str, os.PathLike)) and model_path, f"SP model path must be a non-empty string, got: {model_path!r}"
+        assert isinstance(model_path, (str, os.PathLike)) and model_path, (
+            f"SP model path must be a non-empty string, got: {model_path!r}"
+        )
         model_path = str(model_path)
         # Accept a directory containing tokenizer.model or a direct .model file
-        spm_file = model_path if model_path.endswith('.model') else os.path.join(model_path, 'tokenizer.model')
+        spm_file = (
+            model_path
+            if model_path.endswith(".model")
+            else os.path.join(model_path, "tokenizer.model")
+        )
         assert os.path.exists(spm_file), f"SP model not found: {spm_file}"
         self.sp = spm.SentencePieceProcessor(model_file=spm_file)
 
@@ -43,12 +50,14 @@ class SPTokenizer:
     def decode(self, ids: list[int]) -> str:
         return self.sp.decode(ids)
 
+
 def build_sentencepiece_tokenizer(job_config):
     # Prefer explicit tokenizer_path; fall back to hf_assets_path
-    model_path = getattr(job_config.model, 'tokenizer_path', None) or getattr(job_config.model, 'hf_assets_path', None)
+    model_path = getattr(job_config.model, "tokenizer_path", None) or getattr(
+        job_config.model, "hf_assets_path", None
+    )
     assert model_path, (
         "Neither job_config.model.tokenizer_path nor job_config.model.hf_assets_path is set for SentencePiece tokenizer."
     )
     print(f"[SPTokenizer] Using model path: {model_path}")
     return SPTokenizer(model_path)
-
