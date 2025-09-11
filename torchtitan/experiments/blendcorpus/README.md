@@ -49,7 +49,7 @@ def build_tokenizer(job_config):
     raise Exception(f"Unknown tokenizer_backend '{backend}'. Choose 'sptoken' or 'hf'.")
 ```
 
-In configuration manager, we extended the following option: 
+In configuration manager, we extended the following option:
 ```python
 @dataclass
 class Model:
@@ -214,7 +214,7 @@ context_parallel_degree = 1
 
 ## 6) Running
 ```bash
-NGPU=1 CONFIG_FILE="./torchtitan/experiments/blendcorpus/train_configs/debug_model.toml" ./torchtitan/experiments/blendcorpus/run_train.sh 
+NGPU=1 CONFIG_FILE="./torchtitan/experiments/blendcorpus/train_configs/debug_model.toml" ./torchtitan/experiments/blendcorpus/run_train.sh
 ```
 
 ## 7) Experiments Directory
