@@ -8,11 +8,19 @@
 
 ## 🏃‍♂️ Running
 
+- Clone repo:
+
+  ```bash
+  git clone https://github.com/auroraGPT-ANL/torchtitan
+  cd torchtitan
+  checkout saforem2/blendcorpus
+  ```
+
 - Setup env:
 
   ```bash
-  ; source <(curl -L https://bit.ly/ezpz-utils)
-  ; ezpz_setup_env
+  source <(curl -L https://bit.ly/ezpz-utils)
+  ezpz_setup_env
   ``` 
 
   <details closed><summary><code>output</code>:</summary>
@@ -49,7 +57,7 @@
   [2025-09-11-140839][I][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2337]   - Detected pbs scheduler
   [2025-09-11-140839][I][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2338]   - Machine: aurora
   [2025-09-11-140839][I][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2339]   - Hostname: x4112c1s0b0n0
-  ezpz-^U[2025-09-11-140842][I][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2249]   - PBS_JOBID=7559761.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+  [2025-09-11-140842][I][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2249]   - PBS_JOBID=7559761.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
       to calculate:
         - num_hosts: 2
         - num_cores_per_host: 208
@@ -80,6 +88,16 @@
   ```
   
   </details>
+
+- Install dependencies:
+
+  ```bash
+  uv pip install "git+https://github.com/saforem2/ezpz"
+  # from my fork until PR #2 merged in zhenghh04/blendcorpus
+  python3 -m pip install "git+https://github.com/saforem2/blendcorpus/tree/saforem2/reorg-imports"
+  # from inside auroraGPT-ANL/torchtitan @ saforem2/blendcorpus
+  python3 -m pip install -e "."
+  ```
 
 - Launch:
 
