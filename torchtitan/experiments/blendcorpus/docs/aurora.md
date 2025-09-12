@@ -1,8 +1,8 @@
 # BlendCorpus + TorchTitan on Multiple Nodes of Aurora
 
 - Using the branches at:
-  - [`saforem2/blendcorpus` @ saforem2/reorg-imports](https://github.com/saforem2/blendcorpus/tree/saforem2/reorg-imports)[^PR]
-  - [auroraGPT-ANL/torchtitan @ saforem2/blendcorpus](https://github.com/auroraGPT-ANL/torchtitan/tree/saforem2/blendcorpus)
+  - [saforem2/`blendcorpus` @ saforem2/reorg-imports](https://github.com/saforem2/blendcorpus/tree/saforem2/reorg-imports)[^PR]
+  - [auroraGPT-ANL/`torchtitan` @ saforem2/blendcorpus](https://github.com/auroraGPT-ANL/torchtitan/tree/saforem2/blendcorpus)
 
 [^PR]: Submitted [PR #2](https://github.com/zhenghh04/blendcorpus/pull/2)
 
@@ -92,6 +92,8 @@
 - Install dependencies:
 
   ```bash
+  # uv not required, but useful!
+  # to download: curl -LsSf https://astral.sh/uv/install.sh | sh
   uv pip install "git+https://github.com/saforem2/ezpz"
   # from my fork until PR #2 merged in zhenghh04/blendcorpus
   python3 -m pip install "git+https://github.com/saforem2/blendcorpus/tree/saforem2/reorg-imports"
