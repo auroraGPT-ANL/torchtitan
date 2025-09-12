@@ -1,7 +1,9 @@
+import ezpz
+
+from torchtitan.components.tokenizer import build_hf_tokenizer
 from torchtitan.experiments.blendcorpus.dataset.sptoken import (
     build_sentencepiece_tokenizer,
 )
-from torchtitan.components.tokenizer import build_hf_tokenizer
 
 
 def build_tokenizer(job_config):

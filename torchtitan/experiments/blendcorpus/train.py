@@ -7,11 +7,14 @@
 import importlib
 import os
 import time
-from datetime import timedelta
-from typing import Any, Generator, Iterable, Optional
+import warnings
 
 import ezpz
 import torch
+
+from datetime import timedelta
+from typing import Any, Generator, Iterable, Optional
+
 from torch.distributed.elastic.multiprocessing.errors import record
 
 import torchtitan.protocols.train_spec as train_spec_module
@@ -36,6 +39,7 @@ from torchtitan.tools.profiling import (
 
 
 logger = ezpz.get_logger(__name__)
+warnings.filterwarnings("ignore")
 
 
 class Trainer(torch.distributed.checkpoint.stateful.Stateful):
@@ -84,7 +88,11 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             importlib.import_module(job_config.experimental.custom_import)
 
         if job_config.job.print_args:
-            logger.info(f"Running with args: {job_config.to_dict()}")
+            import json
+
+            logger.info(
+                f"Running with args: {json.dumps(job_config.to_dict(), indent=2, sort_keys=True)}"
+            )
 
         device_module, device_type = utils.device_module, utils.device_type
         from blendcorpus.dist_setup import get_device, init_distributed
@@ -622,9 +630,8 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                 )
 
                 # Run validation if validator is available
-                if (
-                    self.job_config.validation.enable
-                    and self.validator.should_validate(self.step)
+                if self.job_config.validation.enable and self.validator.should_validate(
+                    self.step
                 ):
                     self.validator.validate(self.model_parts, self.step)
 
@@ -675,12 +682,12 @@ if __name__ == "__main__":
         trainer = Trainer(config)
 
         if config.checkpoint.create_seed_checkpoint:
-            assert (
-                int(os.environ["WORLD_SIZE"]) == 1
-            ), "Must create seed checkpoint using a single device, to disable sharding."
-            assert (
-                config.checkpoint.enable
-            ), "Must enable checkpointing when creating a seed checkpoint."
+            assert int(os.environ["WORLD_SIZE"]) == 1, (
+                "Must create seed checkpoint using a single device, to disable sharding."
+            )
+            assert config.checkpoint.enable, (
+                "Must enable checkpointing when creating a seed checkpoint."
+            )
             trainer.checkpointer.save(curr_step=0, last_step=True)
             logger.info("Created seed checkpoint")
         else:

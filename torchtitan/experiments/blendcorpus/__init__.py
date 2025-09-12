@@ -25,13 +25,46 @@ __all__ = [
     "pipeline_llama",
     "TransformerModelArgs",
     "Transformer",
-    "llama3_configs",
+    "model_configs",
 ]
 
 
-llama3_configs = {
+# _enforced: str = "This field is used to enforce al",
+#  dim: int = 4096,
+#  n_layers: int = 32,
+#  n_heads: int = 32,
+#  n_kv_heads: int | None = None,
+#  vocab_size: int = 128256,
+#  multiple_of: int = 256,
+#  ffn_dim_multiplier: float | None = None,
+#  norm_eps: float = 0.00001,
+#  rope_theta: float = 10000,
+#  max_seq_len: int = 131072,
+#  depth_init: bool = True,
+#  use_flex_attn: bool = False,
+#  attn_mask_type: str = "causal",
+#  eos_id: int = 0
+
+model_configs = {
     "debugmodel": TransformerModelArgs(
         dim=256, n_layers=6, n_heads=16, vocab_size=32000, rope_theta=500000
+    ),
+    "AuroraGPT-7B": TransformerModelArgs(
+        dim=4096,
+        n_kv_heads=8,
+        # ffn_dim_multiplier=11008,
+        vocab_size=32000,
+        n_layers=32,
+        n_heads=32,
+        rope_theta=10000,
+    ),
+    "AuroraGPT-2B": TransformerModelArgs(
+        dim=2048,
+        n_kv_heads=4,
+        n_layers=12,
+        n_heads=16,
+        vocab_size=256128,
+        rope_theta=50000,
     ),
     "Llama-2-7b": TransformerModelArgs(
         dim=4096, n_layers=6, n_heads=32, vocab_size=32000, rope_theta=500000
@@ -79,7 +112,7 @@ register_train_spec(
     TrainSpec(
         name="blendcorpus",
         model_cls=Transformer,
-        model_args=llama3_configs,
+        model_args=model_configs,
         parallelize_fn=parallelize_llama,
         pipelining_fn=pipeline_llama,
         build_optimizers_fn=build_optimizers,

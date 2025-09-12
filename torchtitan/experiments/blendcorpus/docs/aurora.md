@@ -1,3 +1,7 @@
+> [!NOTE]
+> This has been moved to:
+> [https://samforeman.me/2025/09]
+
 # BlendCorpus + TorchTitan on Multiple Nodes of Aurora
 
 - Using the branches at:
@@ -21,7 +25,7 @@
   ```bash
   source <(curl -L https://bit.ly/ezpz-utils)
   ezpz_setup_env
-  ``` 
+  ```
 
   <details closed><summary><code>output</code>:</summary>
 
@@ -29,14 +33,14 @@
   ; ssh x4112c1s0b0n0
 
   #[🐍 aurora_nre_models_frameworks-2025.2.0]
-  #[/f/A/A/E/A/t/a/torchtitan][🌱 saforem2/blendcorpus][📝🤷✓] 
+  #[/f/A/A/E/A/t/a/torchtitan][🌱 saforem2/blendcorpus][📝🤷✓]
   #[09/11/25 @ 14:08:35][x4112c1s0b0n0]
   ; source <(curl -L https://bit.ly/ezpz-utils)
-  
+
   #[🐍 aurora_nre_models_frameworks-2025.2.0]
-  #[/f/A/A/E/A/t/a/torchtitan][🌱 saforem2/blendcorpus][📝🤷✓] 
+  #[/f/A/A/E/A/t/a/torchtitan][🌱 saforem2/blendcorpus][📝🤷✓]
   #[09/11/25 @ 14:08:37][x4112c1s0b0n0]
-  ; ezpz_setup_env                                                                                                                                                                      
+  ; ezpz_setup_env
   [2025-09-11-140838][I][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2720] Detected PBS scheduler environment.
   [2025-09-11-140838][W][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2756] Current working directory does not match PBS_O_WORKDIR! This may cause issues with the job submission.
   [2025-09-11-140838][W][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2757] PBS_O_WORKDIR /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/zhenghh04/torchtitan
@@ -86,7 +90,7 @@
   [2025-09-11-140842][I][/home/foremans/ezpz/src/ezpz/bin/utils.sh:2495] [✓] Finished [ezpz_setup_env]
   took: 0h:00m:04s
   ```
-  
+
   </details>
 
 - Install dependencies:
@@ -105,7 +109,7 @@
 
   ```bash
   ; ezpz-launch -m torchtitan.experiments.blendcorpus.train --job.config_file torchtitan/experiments/blendcorpus/train_configs/llama2_7b.toml | tee tt-bc-$(tstamp).log
-  ``` 
+  ```
 
   <details closed><summary><code>output</code>:</summary>
 
@@ -124,8 +128,8 @@
   [2025-09-11 14:08:57,635] [INFO] [logging.py:107:log_dist] [Rank -1] [TorchCheckpointEngine] Initialized with serialization = False
   [2025-09-11 14:08:59,509553][I][ezpz/__init__:266:<module>] Setting logging level to 'INFO' on 'RANK == 0'
   [2025-09-11 14:08:59,511925][I][ezpz/__init__:267:<module>] Setting logging level to 'CRITICAL' on all others 'RANK != 0'
-  
-  
+
+
   [2025-09-11 14:08:59,517265][I][ezpz/launch:340:launch] ----[🍋 ezpz.launch][started][2025-09-11-140859]----
   [2025-09-11 14:09:00,864914][I][ezpz/launch:345:launch] Job ID: 7559761
   [2025-09-11 14:09:00,865931][I][ezpz/launch:346:launch] nodelist: ['x4112c1s0b0n0', 'x4112c1s1b0n0']
@@ -134,7 +138,7 @@
   [2025-09-11 14:09:00,868845][I][ezpz/launch:316:build_executable] Building command to execute by piecing together:
   [2025-09-11 14:09:00,869280][I][ezpz/launch:317:build_executable] (1.) launch_cmd: mpiexec --verbose --envall --np=24 --ppn=12 --hostfile=/var/spool/pbs/aux/7559761.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --no-vni --cpu-bind=verbose,list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78
   -80:86-88:94-96
-  [2025-09-11 14:09:00,869994][I][ezpz/launch:318:build_executable] (2.) cmd_to_launch: /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/auroraGPT-ANL/torchtitan/venvs/aurora/torchtitan-aurora_nre_models_frameworks-2025.2.0/bin/python3 -m torchtitan.experiments.blendcorpus.train 
+  [2025-09-11 14:09:00,869994][I][ezpz/launch:318:build_executable] (2.) cmd_to_launch: /lus/flare/projects/AuroraGPT/AuroraGPT-v1/Experiments/AuroraGPT-2B/tt/auroraGPT-ANL/torchtitan/venvs/aurora/torchtitan-aurora_nre_models_frameworks-2025.2.0/bin/python3 -m torchtitan.experiments.blendcorpus.train
   --job.config_file torchtitan/experiments/blendcorpus/train_configs/llama2_7b.toml
   [2025-09-11 14:09:00,871005][I][ezpz/launch:360:launch] Took: 1.35 seconds to build command.
   [2025-09-11 14:09:00,871369][I][ezpz/launch:363:launch] Executing:
@@ -610,7 +614,7 @@
   [2025-09-11 14:10:50,591512][I][components/metrics:437:log] step: 104  loss:  5.3994  grad_norm:  1.9303  memory:  8.44GiB(13.20%)  tps: 6,635  tflops: 61.57  mfu: 20.65%
   [2025-09-11 14:10:51,208789][I][components/metrics:437:log] step: 105  loss:  5.3256  grad_norm:  1.5555  memory:  8.44GiB(13.20%)  tps: 6,647  tflops: 61.68  mfu: 20.69%
   ^C
-  [1]    169285 exit 1     ezpz-launch -m torchtitan.experiments.blendcorpus.train --job.config_file  | 
+  [1]    169285 exit 1     ezpz-launch -m torchtitan.experiments.blendcorpus.train --job.config_file  |
          169290 interrupt  tee tt-bc-$(tstamp).log
   took: 0h:02m:06s
   ```
