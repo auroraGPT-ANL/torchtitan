@@ -10,12 +10,14 @@ import time
 from datetime import timedelta
 from typing import Any, Generator, Iterable, Optional
 
+import ezpz
+
 import torch
 from torch.distributed.elastic.multiprocessing.errors import record
 
 import torchtitan.protocols.train_spec as train_spec_module
 from torchtitan.components.checkpoint import CheckpointManager
-from torchtitan.components.dataloader import DataloaderExhaustedError
+from torchtitan.components.dataloader import DataloaderStopIteration
 from torchtitan.components.ft import FTManager, maybe_semi_sync_training
 from torchtitan.components.loss import rescale_accumulated_loss
 from torchtitan.components.metrics import (
@@ -24,14 +26,16 @@ from torchtitan.components.metrics import (
 )
 from torchtitan.config import ConfigManager, JobConfig
 from torchtitan.distributed import ParallelDims, utils as dist_utils
-from torchtitan.models.attention import init_attention_mask
 from torchtitan.protocols.model_converter import build_model_converters
 from torchtitan.tools import utils
-from torchtitan.tools.logging import init_logger, logger
+from torchtitan.tools.logging import init_logger, get_logger
 from torchtitan.tools.profiling import (
     maybe_enable_memory_snapshot,
     maybe_enable_profiling,
 )
+
+
+logger = get_logger(__name__)
 
 
 class Trainer(torch.distributed.checkpoint.stateful.Stateful):
@@ -295,7 +299,6 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             )
         )
         self.metrics_processor.optimizers = self.optimizers
-        self.metrics_processor.model_parts = self.model_parts
 
         # Initialize trainer states that will be saved in checkpoint.
         # These attributes must be initialized before checkpoint loading.
@@ -386,7 +389,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             except StopIteration as ex:
                 # If data runs out during gradient accumulation, that
                 # entire step will not be executed.
-                raise DataloaderExhaustedError() from ex
+                raise DataloaderStopIteration() from ex
             input_dict, labels = batch
             ntokens_batch = labels.numel()
             self.ntokens_seen += ntokens_batch
@@ -409,16 +412,9 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         model_parts = self.model_parts
         parallel_dims = self.parallel_dims
 
-        inputs = input_dict["input"]
-        # Create the FlexAttention mask according to the input
-        if getattr(self.model_args, "use_flex_attn", False):
-            cp_mesh = (
-                parallel_dims.world_mesh["cp"] if parallel_dims.cp_enabled else None
-            )
-            init_attention_mask(inputs, self.tokenizer.eos_id, cp_mesh)
-
         # apply context parallelism if cp is enabled
         # ensure CP handles the separate freqs_cis buffer for each pp stage
+        inputs = input_dict["input"]
         optional_context_parallel_ctx = (
             dist_utils.create_context_parallel_ctx(
                 cp_mesh=parallel_dims.world_mesh["cp"],
@@ -458,9 +454,12 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             with self.train_context(optional_context_parallel_ctx):
                 assert len(model_parts) == 1
                 with self.maybe_enable_amp:
-                    pred = model_parts[0](inputs)
+                    try:
+                        pred = model_parts[0](inputs, eos_id=self.tokenizer.eos_id)
+                    except TypeError:
+                        pred = model_parts[0](inputs)
                     loss = self.loss_fn(pred, labels)
-                # need to free pred before bwd to avoid peaking memory
+                # need to free to before bwd to avoid peaking memory
                 del pred
                 loss.backward()
 
@@ -480,7 +479,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         accumulated_losses = []
         # If data runs out during gradient accumulation, that
         # entire step will not be executed.
-        for _microbatch in range(self.gradient_accumulation_steps):
+        for microbatch in range(self.gradient_accumulation_steps):
             input_dict, labels = next(data_iterator)
             loss = self.forward_backward_step(input_dict, labels)
             accumulated_losses.append(loss.detach())
@@ -578,12 +577,12 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             ),
         ):
             data_iterator = self.batch_generator(self.dataloader)
-            while self.should_continue_training():
+            while self.step < job_config.training.steps:
                 self.step += 1
                 self.gc_handler.run(self.step)
                 try:
                     self.train_step(data_iterator)
-                except DataloaderExhaustedError:
+                except DataloaderStopIteration:
                     logger.warning("Ran out of data; last step was canceled.")
                     break
 
@@ -592,9 +591,8 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                 )
 
                 # Run validation if validator is available
-                if (
-                    self.job_config.validation.enable
-                    and self.validator.should_validate(self.step)
+                if self.job_config.validation.enable and self.validator.should_validate(
+                    self.step
                 ):
                     self.validator.validate(self.model_parts, self.step)
 
@@ -620,9 +618,6 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
 
         logger.info("Training completed")
 
-    def should_continue_training(self) -> bool:
-        return self.step < self.job_config.training.steps
-
     def state_dict(self) -> dict[str, Any]:
         return {"step": self.step, "ntokens_seen": self.ntokens_seen}
 
@@ -639,6 +634,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
 
 if __name__ == "__main__":
     init_logger()
+    _ = ezpz.setup_torch()
     config_manager = ConfigManager()
     config = config_manager.parse_args()
     trainer: Optional[Trainer] = None
@@ -647,12 +643,12 @@ if __name__ == "__main__":
         trainer = Trainer(config)
 
         if config.checkpoint.create_seed_checkpoint:
-            assert (
-                int(os.environ["WORLD_SIZE"]) == 1
-            ), "Must create seed checkpoint using a single device, to disable sharding."
-            assert (
-                config.checkpoint.enable
-            ), "Must enable checkpointing when creating a seed checkpoint."
+            assert int(os.environ["WORLD_SIZE"]) == 1, (
+                "Must create seed checkpoint using a single device, to disable sharding."
+            )
+            assert config.checkpoint.enable, (
+                "Must enable checkpointing when creating a seed checkpoint."
+            )
             trainer.checkpointer.save(curr_step=0, last_step=True)
             logger.info("Created seed checkpoint")
         else:
