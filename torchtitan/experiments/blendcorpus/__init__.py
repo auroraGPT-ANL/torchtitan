@@ -45,6 +45,23 @@ __all__ = [
 #  attn_mask_type: str = "causal",
 #  eos_id: int = 0
 
+
+def compute_intermediate_size(
+        dim: int,
+        ffn_dim_multiplier: int = 1,
+        multiple_of: int = 256,
+):
+    return multiple_of * ((int(ffn_dim_multiplier * int(8 * dim / 3)) + multiple_of - 1) // multiple_of)
+
+
+def compute_ffn_dim_multiplier(
+        dim: int,
+        intermediate_size: int,
+        multiple_of: int = 256,
+):
+    return 1 + intermediate_size / multiple_of - multiple_of / (8 * dim / 3)
+
+
 model_configs = {
     "debugmodel": TransformerModelArgs(
         dim=256, n_layers=6, n_heads=16, vocab_size=32000, rope_theta=500000
@@ -63,6 +80,7 @@ model_configs = {
         n_kv_heads=4,
         n_layers=12,
         n_heads=16,
+        # ffn_dim_multiplier=compute_ffn,
         vocab_size=256128,
         rope_theta=50000,
     ),
@@ -85,6 +103,15 @@ model_configs = {
         n_kv_heads=8,
         ffn_dim_multiplier=1.3,
         multiple_of=1024,
+        rope_theta=500000,
+    ),
+    "Llama3-70B": TransformerModelArgs(
+        dim=8192,
+        n_layers=80,
+        n_heads=64,
+        n_kv_heads=8,
+        ffn_dim_multiplier=1.3,
+        multiple_of=256,
         rope_theta=500000,
     ),
     "70B": TransformerModelArgs(

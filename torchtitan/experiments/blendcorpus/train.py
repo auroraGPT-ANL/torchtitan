@@ -9,11 +9,12 @@ import os
 import time
 import warnings
 
-import ezpz
-import torch
-
 from datetime import timedelta
 from typing import Any, Generator, Iterable, Optional
+
+import ezpz
+import torch
+import torch.distributed
 
 from torch.distributed.elastic.multiprocessing.errors import record
 
@@ -98,8 +99,12 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         from blendcorpus.dist_setup import get_device, init_distributed
 
         self.device = get_device()
+        self.device = torch.device(
+        f"{ezpz.get_torch_device_type()}:{int(ezpz.get_local_rank())}"
+        )
+        assert self.device is not None and isinstance(self.device, torch.device)
         # self.device = torch.device(f"{device_type}:{int(os.environ['LOCAL_RANK'])}")
-        # Device has to be set before creating TorchFT manager.
+        # dist, rank, world_size = init_distributed()
         device_module.set_device(self.device)
         dist, rank, world_size = init_distributed()
         # init distributed and build meshes
@@ -145,7 +150,6 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             job_config.training.deterministic,
         )
         self.train_spec = train_spec_module.get_train_spec(job_config.model.name)
-
         # build tokenizer and dataloader
         self.tokenizer = (
             self.train_spec.build_tokenizer_fn(job_config)
@@ -167,14 +171,18 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             f"% ({job_config.training.local_batch_size} * {dp_degree}) != 0)"
         )
         # --- BlendCorpus integration ---
+        # train_dl, valid_dl, test_dl = self.train_spec.build_dataloader_fn(
         train_dl, valid_dl, test_dl = self.train_spec.build_dataloader_fn(
-            job_config, global_batch_size
+            cfg=job_config,
+            global_batch_size=global_batch_size,
         )  # returns (train, valid, test)
         self.dataloader = train_dl
         # If your Trainer uses eval/test loaders, surface them too:
         self.eval_dataloader = valid_dl if valid_dl is not None else None
         self.test_dataloader = test_dl if test_dl is not None else None
+
         utils.logger.info("Using BlendCorpus dataloader.")
+
 
         # build model (using meta init)
         model_args = self.train_spec.model_args[job_config.model.flavor]
@@ -630,8 +638,9 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
                 )
 
                 # Run validation if validator is available
-                if self.job_config.validation.enable and self.validator.should_validate(
-                    self.step
+                if (
+                    self.job_config.validation.enable
+                    and self.validator.should_validate(self.step)
                 ):
                     self.validator.validate(self.model_parts, self.step)
 
@@ -672,7 +681,9 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
 
 
 if __name__ == "__main__":
-    _ = ezpz.setup_torch()
+    rank = ezpz.setup_torch()
+    if rank == 0:
+        _ = ezpz.setup_wandb()
     # init_logger()
     config_manager = ConfigManager()
     config = config_manager.parse_args()
@@ -682,12 +693,12 @@ if __name__ == "__main__":
         trainer = Trainer(config)
 
         if config.checkpoint.create_seed_checkpoint:
-            assert int(os.environ["WORLD_SIZE"]) == 1, (
-                "Must create seed checkpoint using a single device, to disable sharding."
-            )
-            assert config.checkpoint.enable, (
-                "Must enable checkpointing when creating a seed checkpoint."
-            )
+            assert (
+                int(os.environ["WORLD_SIZE"]) == 1
+            ), "Must create seed checkpoint using a single device, to disable sharding."
+            assert (
+                config.checkpoint.enable
+            ), "Must enable checkpointing when creating a seed checkpoint."
             trainer.checkpointer.save(curr_step=0, last_step=True)
             logger.info("Created seed checkpoint")
         else:

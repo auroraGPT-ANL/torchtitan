@@ -117,7 +117,7 @@ class AdapterDL:
 
 # --- end top-level class ---
 def build_blendcorpus_dataloader(
-    cfg, global_batch_size: int
+    cfg, global_batch_size: int,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     # Map TorchTitan config → BlendCorpus config
     cfg.blendcorpus.seq_length = getattr(cfg.training, "seq_len")

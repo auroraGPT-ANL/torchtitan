@@ -16,9 +16,10 @@ enable_tensorboard = true
 save_tb_folder = "tb"
 
 [model]
-name = "llama3"
-flavor = "70B"
-hf_assets_path = "./assets/hf/Llama-3.1-70B"
+name = "blendcorpus"
+flavor = "Llama3-70B"
+tokenizer_backend = "sptoken"
+hf_assets_path = "assets/hf/Llama-3.1-70B"
 # converters = ["float8"]
 
 [optimizer]
@@ -35,7 +36,8 @@ seq_len = 8192
 max_norm = 1.0  # grad norm clipping
 steps = 1000
 dataset = "blendcorpus"  # supported datasets: c4_test (2K), c4 (177M)
-dataset_path = "/home/huihuo.zheng/vast/AuroraGPT/datasets/data_list.txt"
+# dataset_path = "/home/huihuo.zheng/vast/AuroraGPT/datasets/data_list.txt"
+dataset_path = "/flare/Aurora_deployment/AuroraGPT/datasets/dolma/dolma_v1_7_file_list_mini.txt"
 
 [experimental]
 custom_args_module = "torchtitan.experiments.blendcorpus.job_config"
@@ -48,7 +50,7 @@ pipeline_parallel_degree = 1
 context_parallel_degree = 1
 
 [checkpoint]
-enable_checkpoint = false
+# enable_checkpoint = false
 folder = "checkpoint"
 interval = 500
 last_save_model_only = true
@@ -68,7 +70,7 @@ precompute_float8_dynamic_scale_for_fsdp = false
 filter_fqns = ["output"]
 
 [validation]
-enabled = false
+enable = false
 dataset = "c4_validation"
 freq = 500
 steps = -1
@@ -84,4 +86,4 @@ append_eod = true
 provide_attention_mask = false
 shuffle_sample_in_corpus = true
 eod_token_id = 2
-data_cache_path = "./data_cache_path"
+data_cache_path = "./data_cache_path/Llama3-70B"
