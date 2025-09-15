@@ -18,9 +18,9 @@ from torch.distributed.pipelining.schedules import (
     get_schedule_class,
     PipelineScheduleMulti,
     PipelineScheduleSingle,
-    ScheduleDualPipeV,
     ScheduleZBVZeroBubble,
 )
+ScheduleDualPipeV = ScheduleZBVZeroBubble
 
 from torchtitan.config import JobConfig
 from torchtitan.tools.logging import logger
@@ -284,7 +284,7 @@ def pipeline_module_split(
 
         # Create a set of modules to keep for faster lookup
         modules_to_keep = set(module_names)
-        logger.info(f"Stage {stage_idx}: Modules to keep: {modules_to_keep}")
+        print(f"Stage {stage_idx}: Modules to keep: {modules_to_keep}")
         for module_name, module_value in model.named_children():
             # Handle layer-like structures (e.g., "layers.0", "layers.1")
             if isinstance(module_value, (nn.ModuleDict, nn.ModuleList)):

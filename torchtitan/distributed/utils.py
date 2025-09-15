@@ -10,6 +10,7 @@ import os
 from collections.abc import Generator, Iterable
 from datetime import timedelta
 
+import ezpz
 import torch
 import torch.distributed._functional_collectives as funcol
 import torch.distributed.distributed_c10d as c10d
@@ -206,7 +207,9 @@ def get_train_context(
 
                 if SDPBackend.MATH in ScaledDotProductAttention.backends:
                     ScaledDotProductAttention.backends.remove(SDPBackend.MATH)
-
+                assert ScaledDotProductAttention.backends, (
+                    "No valid SDPA backends with CP."
+                )
                 stack.enter_context(cp_context)
 
             yield
@@ -248,7 +251,7 @@ def init_distributed(
         os.environ[env] = val
 
     def _get_distributed_backend(enable_cpu_backend):
-        backend = "nccl"
+        backend = ezpz.dist.get_torch_backend()
         if device_type in torch.distributed.Backend.default_device_backend_map:
             backend = torch.distributed.Backend.default_device_backend_map.get(
                 device_type
@@ -269,7 +272,7 @@ def init_distributed(
     # behavior differences
     _warn_overwrite_env(ASYNC_ERROR_HANDLING, SKIP_CLEANUP)
 
-    # enable torch nccl flight recorder in the mode that would dump files if timeout is detected
+    # Enable Torch nccl flight recorder in the mode that would dump files if timeout is detected
     _warn_overwrite_env(TRACE_BUFFER_SIZE, str(comm_config.trace_buf_size))
     if comm_config.trace_buf_size > 0:
         # dump on timeout by default if trace buffer is enabled
@@ -277,11 +280,11 @@ def init_distributed(
         dump_dir = os.path.join(base_folder, comm_config.save_traces_folder)
         os.makedirs(dump_dir, exist_ok=True)
         _warn_overwrite_env(TRACE_FILE, f"{dump_dir}/rank_")
-
-    torch.distributed.init_process_group(
-        backend=_get_distributed_backend(enable_cpu_backend),
-        timeout=timedelta(seconds=comm_config.init_timeout_seconds),
-    )
+    if not torch.distributed.is_initialized():
+        torch.distributed.init_process_group(
+            backend=_get_distributed_backend(enable_cpu_backend),
+            timeout=timedelta(seconds=comm_config.init_timeout_seconds),
+        )
 
 
 def set_pg_timeouts(timeout, world_mesh):
@@ -431,9 +434,7 @@ def _clip_grad_norm_with_ep(
     if math.isinf(norm_type):
         total_norm = torch.maximum(ep_grads_total_norm, non_ep_grads_total_norm)
     else:
-        total_norm = (
-            ep_grads_total_norm**norm_type + non_ep_grads_total_norm**norm_type
-        )
+        total_norm = ep_grads_total_norm**norm_type + non_ep_grads_total_norm**norm_type
         total_norm **= 1.0 / norm_type
 
     if pp_mesh is not None:
