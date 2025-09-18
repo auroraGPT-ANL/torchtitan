@@ -1,7 +1,11 @@
 > [!NOTE]
 > This has been moved to:
-> [https://samforeman.me/2025/09]
+> [🍹 BlendCorpus + TorchTitan @ ALCF](https://samforeman.me/posts/2025/09/12/torchtitan-blendcorpus/index.html)
 
+
+<details closed><summary>[OLD]</summary>
+
+  
 # BlendCorpus + TorchTitan on Multiple Nodes of Aurora
 
 - Using the branches at:
@@ -618,3 +622,5 @@
          169290 interrupt  tee tt-bc-$(tstamp).log
   took: 0h:02m:06s
   ```
+
+```
