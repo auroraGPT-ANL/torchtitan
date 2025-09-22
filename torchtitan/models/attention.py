@@ -11,6 +11,7 @@ from typing import Callable, ClassVar
 
 import torch
 import torch.nn.functional as F
+
 try:
     from torch.distributed.tensor.experimental._attention import create_cp_block_mask
 except Exception:
@@ -19,6 +20,7 @@ except Exception:
         raise NotImplementedError(
             "create_cp_block_mask is not available. Please ensure you have the correct PyTorch version and build."
         )
+
 
 from torch.nn.attention import sdpa_kernel, SDPBackend
 from torch.nn.attention.flex_attention import (
