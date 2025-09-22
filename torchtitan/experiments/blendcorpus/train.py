@@ -4,23 +4,72 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# # Copyright (c) Meta Platforms, Inc. and affiliates.
+# # All rights reserved.
+# #
+# # This source code is licensed under the BSD-style license found in the
+# # LICENSE file in the root directory of this source tree.
+#
+# import importlib
+# import os
+# import time
+# import warnings
+#
+# from datetime import timedelta
+# from typing import Any, Generator, Iterable, Optional
+#
+# import ezpz
+# import torch
+# import torch.distributed
+#
+# from torch.distributed.elastic.multiprocessing.errors import record
+#
+# import torchtitan.protocols.train_spec as train_spec_module
+# from torchtitan.components.checkpoint import CheckpointManager
+# from torchtitan.components.dataloader import DataloaderExhaustedError
+# from torchtitan.components.ft import FTManager, maybe_semi_sync_training
+# from torchtitan.components.loss import rescale_accumulated_loss
+# from torchtitan.components.metrics import (
+#     build_metrics_processor,
+#     ensure_pp_loss_visible,
+# )
+# from torchtitan.config import ConfigManager, JobConfig
+# from torchtitan.distributed import ParallelDims, utils as dist_utils
+# from torchtitan.protocols.model_converter import build_model_converters
+# from torchtitan.tools import utils
+#
+# # from torchtitan.tools.logging import init_logger, logger
+# from torchtitan.tools.profiling import (
+#     maybe_enable_memory_snapshot,
+#     maybe_enable_profiling,
+# )
+#
+#
+# logger = ezpz.get_logger(__name__)
+# warnings.filterwarnings("ignore")
+#
+#
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import importlib
 import os
 import time
 import warnings
-
 from datetime import timedelta
 from typing import Any, Generator, Iterable, Optional
 
 import ezpz
-import torch
-import torch.distributed
 
+import torch
 from torch.distributed.elastic.multiprocessing.errors import record
 
 import torchtitan.protocols.train_spec as train_spec_module
 from torchtitan.components.checkpoint import CheckpointManager
-from torchtitan.components.dataloader import DataloaderStopIteration
+from torchtitan.components.dataloader import DataloaderExhaustedError
 from torchtitan.components.ft import FTManager, maybe_semi_sync_training
 from torchtitan.components.loss import rescale_accumulated_loss
 from torchtitan.components.metrics import (
@@ -29,15 +78,16 @@ from torchtitan.components.metrics import (
 )
 from torchtitan.config import ConfigManager, JobConfig
 from torchtitan.distributed import ParallelDims, utils as dist_utils
+
+# from torchtitan.models.attention import init_attention_mask
 from torchtitan.protocols.model_converter import build_model_converters
 from torchtitan.tools import utils
 
-# from torchtitan.tools.logging import init_logger, logger
+# from torchtitan.tools.logging import init_logger
 from torchtitan.tools.profiling import (
     maybe_enable_memory_snapshot,
     maybe_enable_profiling,
 )
-
 
 logger = ezpz.get_logger(__name__)
 warnings.filterwarnings("ignore")
@@ -96,17 +146,23 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             )
 
         device_module, device_type = utils.device_module, utils.device_type
-        from blendcorpus.dist_setup import get_device, init_distributed
+        # from blendcorpus.dist_setup import get_device, init_distributed
 
-        self.device = get_device()
-        self.device = torch.device(
-        f"{ezpz.get_torch_device_type()}:{int(ezpz.get_local_rank())}"
-        )
+        # self.device = torch.device(
+        #     f"{ezpz.get_torch_device_type()}:{int(ezpz.get_local_rank())}"
+        # )
+        import ezpz
+
+        devtype = ezpz.get_torch_device_type()
+        self.device = torch.device(f"{devtype}:{ezpz.get_local_rank()}")
         assert self.device is not None and isinstance(self.device, torch.device)
         # self.device = torch.device(f"{device_type}:{int(os.environ['LOCAL_RANK'])}")
         # dist, rank, world_size = init_distributed()
+        # assert device_module is not None and callable(
+        #     hasattr(device_module, "set_device")
+        # )
         device_module.set_device(self.device)
-        dist, rank, world_size = init_distributed()
+        # dist, rank, world_size = init_distributed()
         # init distributed and build meshes
         dist_utils.init_distributed(
             job_config.comm,
@@ -123,7 +179,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             pp=parallelism_config.pipeline_parallel_degree,
             ep=parallelism_config.expert_parallel_degree,
             etp=parallelism_config.expert_tensor_parallel_degree,
-            world_size=world_size,
+            world_size=ezpz.get_world_size(),
         )
 
         world_mesh = parallel_dims.world_mesh
@@ -171,18 +227,33 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             f"% ({job_config.training.local_batch_size} * {dp_degree}) != 0)"
         )
         # --- BlendCorpus integration ---
-        # train_dl, valid_dl, test_dl = self.train_spec.build_dataloader_fn(
-        train_dl, valid_dl, test_dl = self.train_spec.build_dataloader_fn(
-            cfg=job_config,
-            global_batch_size=global_batch_size,
-        )  # returns (train, valid, test)
+        train_dl = None
+        valid_dl = None
+        test_dl = None
+        try:
+            # data_loaders = self.train_spec.build_dataloader_fn(
+            train_dl, valid_dl, test_dl = self.train_spec.build_dataloader_fn(
+                cfg=job_config,
+                global_batch_size=global_batch_size,
+            )  # returns {"train": train_dl, "val": valid_dl, "test": test_dl}
+            # assert isinstance(data_loaders, dict) and "train" in data_loaders
+            # train_dl = data_loaders.get("train", None)
+            # valid_dl = data_loaders.get("val", None)
+            # test_dl = data_loaders.get("test", None)
+        except Exception:
+            import ezpz
+
+            ezpz.breakpoint(0)
+            # train_dl = None
+            # valid_dl = None
+            # test_dl = None
+
+        assert train_dl is not None
         self.dataloader = train_dl
         # If your Trainer uses eval/test loaders, surface them too:
         self.eval_dataloader = valid_dl if valid_dl is not None else None
         self.test_dataloader = test_dl if test_dl is not None else None
-
-        utils.logger.info("Using BlendCorpus dataloader.")
-
+        logger.info("Using BlendCorpus dataloader")
 
         # build model (using meta init)
         model_args = self.train_spec.model_args[job_config.model.flavor]
@@ -410,7 +481,8 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
             except StopIteration as ex:
                 # If data runs out during gradient accumulation, that
                 # entire step will not be executed.
-                raise DataloaderStopIteration() from ex
+                # raise DataloaderStopIteration() from ex
+                raise DataloaderExhaustedError() from ex
             input_dict, labels = batch
             ntokens_batch = labels.numel()
             self.ntokens_seen += ntokens_batch
@@ -682,12 +754,13 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
 
 if __name__ == "__main__":
     rank = ezpz.setup_torch()
-    if rank == 0:
-        _ = ezpz.setup_wandb()
     # init_logger()
     config_manager = ConfigManager()
     config = config_manager.parse_args()
     trainer: Optional[Trainer] = None
+
+    if rank == 0:
+        _ = ezpz.setup_wandb(config=config.to_dict())
 
     try:
         trainer = Trainer(config)
@@ -702,16 +775,30 @@ if __name__ == "__main__":
             trainer.checkpointer.save(curr_step=0, last_step=True)
             logger.info("Created seed checkpoint")
         else:
-            try:
-                logger.info("Using SDPBackend.FLASH_ATTENTION backend for SDPA")
-                from torch.nn.attention import sdpa_kernel, SDPBackend
+            # try:
+            #     logger.info("Using SDPBackend.FLASH_ATTENTION backend for SDPA")
+            #     from torch.nn.attention import sdpa_kernel, SDPBackend
+            #
+            #     with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            if torch.cuda.is_available():
+                torch.backends.cuda.enable_flash_sdp(False)
+                torch.backends.cuda.enable_mem_efficient_sdp(False)
+                torch.backends.cuda.enable_math_sdp(False)
+                torch.backends.cuda.enable_cudnn_sdp(False)
 
-                with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
-                    trainer.train()
-            except Exception:
-                # Fallback to default attention implementation
-                logger.warning("Falling back to default attention implementation")
-                trainer.train()
+                # if args.cuda_sdpa_backend in ['flash_sdp', 'all']:
+                #     torch.backends.cuda.enable_flash_sdp(True)
+                # if args.cuda_sdpa_backend in ['mem_efficient_sdp', 'all']:
+                #     torch.backends.cuda.enable_mem_efficient_sdp(True)
+                # if args.cuda_sdpa_backend in ['math_sdp', 'all']:
+                #     torch.backends.cuda.enable_math_sdp(True)
+                # if args.cuda_sdpa_backend in ['cudnn_sdp', 'all']:
+                #     torch.backends.cuda.enable_cudnn_sdp(True)
+            trainer.train()
+            # except Exception:
+            #     # Fallback to default attention implementation
+            #     logger.warning("Falling back to default attention implementation")
+            #     trainer.train()
     except Exception:
         if trainer:
             trainer.close()
