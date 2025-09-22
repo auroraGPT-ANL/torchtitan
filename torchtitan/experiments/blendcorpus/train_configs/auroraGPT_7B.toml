@@ -4,7 +4,7 @@
 dump_folder = "./outputs/AuroraGPT-7B"
 description = "AuroraGPT-7B Training"
 print_args = true
-use_for_integration_test = true
+# use_for_integration_test = true
 
 [profiling]
 enable_profiling = false
@@ -24,7 +24,6 @@ enable_wandb = true
 # choose which preset to start from
 name = "blendcorpus"
 flavor = "AuroraGPT-7B" # this picks the preset your log shows
-
 # tokenizer wiring (your local SPM)
 tokenizer_backend = "sptoken"
 hf_assets_path = "./assets/hf/AuroraGPT-7B"
@@ -103,4 +102,4 @@ provide_attention_mask = false
 shuffle_sample_in_corpus = true
 blend_sample_in_corpus = false
 eod_token_id = 2
-data_cache_path = "./.cache/data/auroraGPT-7B/olmo-mix-1124/"
+data_cache_path = "./.cache/data/auroraGPT-7B/"

@@ -4,10 +4,10 @@
 dump_folder = "./outputs/AuroraGPT-2B"
 description = "AuroraGPT-2B Training"
 print_args = true
-use_for_integration_test = true
+# use_for_integration_test = true
 
 [profiling]
-enable_profiling = true
+enable_profiling = false
 save_traces_folder = "profile_trace"
 profile_freq = 10
 enable_memory_snapshot = true
@@ -16,7 +16,7 @@ save_memory_snapshot_folder = "memory_snapshot"
 [metrics]
 log_freq = 1
 disable_color_printing = false
-enable_tensorboard = true
+enable_tensorboard = false
 save_tb_folder = "tb"
 enable_wandb = true
 
