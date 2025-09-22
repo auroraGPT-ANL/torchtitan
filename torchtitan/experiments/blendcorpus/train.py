@@ -4,57 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# # Copyright (c) Meta Platforms, Inc. and affiliates.
-# # All rights reserved.
-# #
-# # This source code is licensed under the BSD-style license found in the
-# # LICENSE file in the root directory of this source tree.
-#
-# import importlib
-# import os
-# import time
-# import warnings
-#
-# from datetime import timedelta
-# from typing import Any, Generator, Iterable, Optional
-#
-# import ezpz
-# import torch
-# import torch.distributed
-#
-# from torch.distributed.elastic.multiprocessing.errors import record
-#
-# import torchtitan.protocols.train_spec as train_spec_module
-# from torchtitan.components.checkpoint import CheckpointManager
-# from torchtitan.components.dataloader import DataloaderExhaustedError
-# from torchtitan.components.ft import FTManager, maybe_semi_sync_training
-# from torchtitan.components.loss import rescale_accumulated_loss
-# from torchtitan.components.metrics import (
-#     build_metrics_processor,
-#     ensure_pp_loss_visible,
-# )
-# from torchtitan.config import ConfigManager, JobConfig
-# from torchtitan.distributed import ParallelDims, utils as dist_utils
-# from torchtitan.protocols.model_converter import build_model_converters
-# from torchtitan.tools import utils
-#
-# # from torchtitan.tools.logging import init_logger, logger
-# from torchtitan.tools.profiling import (
-#     maybe_enable_memory_snapshot,
-#     maybe_enable_profiling,
-# )
-#
-#
-# logger = ezpz.get_logger(__name__)
-# warnings.filterwarnings("ignore")
-#
-#
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 import importlib
 import os
 import time
@@ -65,6 +14,7 @@ from typing import Any, Generator, Iterable, Optional
 import ezpz
 
 import torch
+import torch.distributed.checkpoint.stateful
 from torch.distributed.elastic.multiprocessing.errors import record
 
 import torchtitan.protocols.train_spec as train_spec_module
@@ -156,7 +106,6 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         devtype = ezpz.get_torch_device_type()
         self.device = torch.device(f"{devtype}:{ezpz.get_local_rank()}")
         assert self.device is not None and isinstance(self.device, torch.device)
-        # self.device = torch.device(f"{device_type}:{int(os.environ['LOCAL_RANK'])}")
         # dist, rank, world_size = init_distributed()
         # assert device_module is not None and callable(
         #     hasattr(device_module, "set_device")
@@ -164,11 +113,12 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         device_module.set_device(self.device)
         # dist, rank, world_size = init_distributed()
         # init distributed and build meshes
-        dist_utils.init_distributed(
-            job_config.comm,
-            enable_cpu_backend=job_config.training.enable_cpu_offload,
-            base_folder=job_config.job.dump_folder,
-        )
+        if not torch.distributed.is_initialized():
+            dist_utils.init_distributed(
+                job_config.comm,
+                enable_cpu_backend=job_config.training.enable_cpu_offload,
+                base_folder=job_config.job.dump_folder,
+            )
         # world_size = int(os.environ["WORLD_SIZE"])
         parallelism_config = job_config.parallelism
         self.parallel_dims = parallel_dims = ParallelDims(
@@ -424,7 +374,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         self.maybe_enable_amp = dist_utils.maybe_enable_amp(
             parallel_dims,
             job_config.training.mixed_precision_param,
-            device_type,
+            device_type=self.device,
         )
 
         # Build validator if validation is configured
@@ -569,7 +519,7 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         accumulated_losses = []
         # If data runs out during gradient accumulation, that
         # entire step will not be executed.
-        for microbatch in range(self.gradient_accumulation_steps):
+        for _microbatch in range(self.gradient_accumulation_steps):
             input_dict, labels = next(data_iterator)
             loss = self.forward_backward_step(input_dict, labels)
             accumulated_losses.append(loss.detach())
@@ -781,10 +731,10 @@ if __name__ == "__main__":
             #
             #     with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
             if torch.cuda.is_available():
-                torch.backends.cuda.enable_flash_sdp(False)
-                torch.backends.cuda.enable_mem_efficient_sdp(False)
-                torch.backends.cuda.enable_math_sdp(False)
-                torch.backends.cuda.enable_cudnn_sdp(False)
+                torch.backends.cuda.enable_flash_sdp(True)
+                torch.backends.cuda.enable_mem_efficient_sdp(True)
+                torch.backends.cuda.enable_math_sdp(True)
+                torch.backends.cuda.enable_cudnn_sdp(True)
 
                 # if args.cuda_sdpa_backend in ['flash_sdp', 'all']:
                 #     torch.backends.cuda.enable_flash_sdp(True)
