@@ -3,8 +3,8 @@
 [job]
 dump_folder = "./outputs"
 description = "Llama 3 debug training"
-print_args = false
-use_for_integration_test = true
+print_args = true
+# use_for_integration_test = true
 
 [profiling]
 enable_profiling = false
@@ -101,4 +101,4 @@ provide_attention_mask = false
 shuffle_sample_in_corpus = true
 blend_sample_in_corpus = false
 eod_token_id = 2
-#data_cache_path = "./data_cache_path"
+data_cache_path = "./data_cache_path"
