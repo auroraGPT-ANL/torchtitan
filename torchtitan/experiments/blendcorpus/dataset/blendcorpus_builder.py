@@ -118,7 +118,8 @@ class AdapterDL:
 # --- end top-level class ---
 def build_blendcorpus_dataloader(
     cfg, global_batch_size: int,
-) -> Tuple[DataLoader, DataLoader, DataLoader]:
+) -> dict[str, DataLoader]:
+    # ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     # Map TorchTitan config → BlendCorpus config
     cfg.blendcorpus.seq_length = getattr(cfg.training, "seq_len")
     cfg.blendcorpus.data_file_list = getattr(cfg.training, "dataset_path")
@@ -167,3 +168,8 @@ def build_blendcorpus_dataloader(
         if test_loader is not None
         else None,
     )
+    # return {
+    #     "train": AdapterDL(train_loader, ds=train_ds, bc_cfg=bc_cfg) if train_loader is not None else None,
+    #     "valid": AdapterDL(valid_loader, ds=valid_ds, bc_cfg=bc_cfg) if valid_loader is not None else None,
+    #     "test": AdapterDL(test_loader, ds=test_ds, bc_cfg=bc_cfg) if test_loader is not None else None,
+    # }

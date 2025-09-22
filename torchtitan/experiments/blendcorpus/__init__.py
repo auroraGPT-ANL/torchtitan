@@ -11,14 +11,16 @@ from torchtitan.experiments.blendcorpus.dataset.blendcorpus_builder import (
     build_blendcorpus_dataloader,
 )
 from torchtitan.experiments.blendcorpus.dataset.build_tokenizer import build_tokenizer
+
+from torchtitan.experiments.blendcorpus.infra.parallelize import parallelize_llama
+from torchtitan.experiments.blendcorpus.infra.pipeline import pipeline_llama
+from torchtitan.experiments.blendcorpus.model.args import TransformerModelArgs
+from torchtitan.experiments.blendcorpus.model.model import Transformer
+from torchtitan.experiments.blendcorpus.model.state_dict_adapter import (
+    Llama3StateDictAdapter,
+)
 from torchtitan.experiments.blendcorpus.validate import build_blendcorpus_validator
 from torchtitan.protocols.train_spec import register_train_spec, TrainSpec
-
-from .infra.parallelize import parallelize_llama
-from .infra.pipeline import pipeline_llama
-from .model.args import TransformerModelArgs
-from .model.model import Transformer
-from .model.state_dict_adapter import Llama3StateDictAdapter
 
 __all__ = [
     "parallelize_llama",
@@ -47,17 +49,19 @@ __all__ = [
 
 
 def compute_intermediate_size(
-        dim: int,
-        ffn_dim_multiplier: int = 1,
-        multiple_of: int = 256,
+    dim: int,
+    ffn_dim_multiplier: int = 1,
+    multiple_of: int = 256,
 ):
-    return multiple_of * ((int(ffn_dim_multiplier * int(8 * dim / 3)) + multiple_of - 1) // multiple_of)
+    return multiple_of * (
+        (int(ffn_dim_multiplier * int(8 * dim / 3)) + multiple_of - 1) // multiple_of
+    )
 
 
 def compute_ffn_dim_multiplier(
-        dim: int,
-        intermediate_size: int,
-        multiple_of: int = 256,
+    dim: int,
+    intermediate_size: int,
+    multiple_of: int = 256,
 ):
     return 1 + intermediate_size / multiple_of - multiple_of / (8 * dim / 3)
 
@@ -96,7 +100,7 @@ model_configs = {
         use_flex_attn=True,
         attn_mask_type="block_causal",
     ),
-    "8B": TransformerModelArgs(
+    "Llama3-8B": TransformerModelArgs(
         dim=4096,
         n_layers=32,
         n_heads=32,
@@ -114,16 +118,16 @@ model_configs = {
         multiple_of=256,
         rope_theta=500000,
     ),
-    "70B": TransformerModelArgs(
-        dim=8192,
-        n_layers=80,
-        n_heads=64,
-        n_kv_heads=8,
-        ffn_dim_multiplier=1.3,
-        multiple_of=4096,
-        rope_theta=500000,
-    ),
-    "405B": TransformerModelArgs(
+    # "70B": TransformerModelArgs(
+    #     dim=8192,
+    #     n_layers=80,
+    #     n_heads=64,
+    #     n_kv_heads=8,
+    #     ffn_dim_multiplier=1.3,
+    #     multiple_of=4096,
+    #     rope_theta=500000,
+    # ),
+    "Llama-3-405B": TransformerModelArgs(
         dim=16384,
         n_layers=126,
         n_heads=128,
