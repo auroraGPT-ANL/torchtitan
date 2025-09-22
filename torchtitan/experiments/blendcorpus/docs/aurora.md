@@ -5,7 +5,7 @@
 
 <details closed><summary>[OLD]</summary>
 
-  
+
 # BlendCorpus + TorchTitan on Multiple Nodes of Aurora
 
 - Using the branches at:
