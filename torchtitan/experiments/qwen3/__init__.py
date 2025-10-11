@@ -131,14 +131,14 @@ qwen3_configs = {
     ),
     "30B-A3B": Qwen3ModelArgs(
         vocab_size=151936,
-        max_seq_len=4096,
+        max_seq_len=262144,
         head_dim=128,
-        dim=5120,
-        n_layers=64,
-        n_heads=64,
-        n_kv_heads=8,
+        dim=2048,
+        n_layers=48,
+        n_heads=32,
+        n_kv_heads=4,
         qk_norm=True,
-        hidden_dim=25600,
+        hidden_dim=6144,
         rope_theta=1000000,
         moe_enabled=True,
         moe_inter_dim=768,
@@ -180,7 +180,6 @@ qwen3_configs = {
 
 def get_train_spec() -> TrainSpec:
     return TrainSpec(
-        name="qwen3",
         model_cls=Qwen3Model,
         model_args=qwen3_configs,  # Change from dict to Mapping
         parallelize_fn=parallelize_qwen3,

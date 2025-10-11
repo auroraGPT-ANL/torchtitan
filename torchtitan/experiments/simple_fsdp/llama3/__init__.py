@@ -3,35 +3,30 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-from mm_dataset import build_mm_dataloader
+#
+# Copyright (c) Meta Platforms, Inc. All Rights Reserved.
 
 from torchtitan.components.loss import build_cross_entropy_loss
 from torchtitan.components.lr_scheduler import build_lr_schedulers
 from torchtitan.components.optimizer import build_optimizers
 from torchtitan.components.tokenizer import build_hf_tokenizer
-from torchtitan.models.llama3 import parallelize_llama, pipeline_llama
-from torchtitan.protocols.train_spec import register_train_spec, TrainSpec
+from torchtitan.datasets.hf_datasets import build_hf_dataloader
+from torchtitan.models.llama3 import llama3_configs, pipeline_llama
+from torchtitan.protocols.train_spec import TrainSpec
 
-from .model import ModelArgs, MultimodalDecoder, VisionEncoder
+from .model import SimpleFSDPTransformer
+from .parallelize import parallelize_llama
 
-__all__ = ["VisionEncoder", "ModelArgs", "MultimodalDecoder"]
 
-llama4_mm_configs = {
-    # TODO: add configs for llama4 multimodal
-}
-
-register_train_spec(
-    "llama4_multimodal",
-    TrainSpec(
-        model_cls=MultimodalDecoder,
-        model_args=llama4_mm_configs,
+def get_train_spec() -> TrainSpec:
+    return TrainSpec(
+        model_cls=SimpleFSDPTransformer,
+        model_args=llama3_configs,
         parallelize_fn=parallelize_llama,
         pipelining_fn=pipeline_llama,
         build_optimizers_fn=build_optimizers,
         build_lr_schedulers_fn=build_lr_schedulers,
-        build_dataloader_fn=build_mm_dataloader,
+        build_dataloader_fn=build_hf_dataloader,
         build_tokenizer_fn=build_hf_tokenizer,
         build_loss_fn=build_cross_entropy_loss,
-    ),
-)
+    )
