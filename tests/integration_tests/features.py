@@ -5,7 +5,21 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import os
+
 from tests.integration_tests import OverrideDefinitions
+
+# Use RUNNER_TEMP if defined (GitHub Actions variable), else fallback to old path
+runner_temp = os.getenv("RUNNER_TEMP")
+if runner_temp:
+    checkpoint_path = os.path.join(
+        runner_temp,
+        "artifacts-to-be-uploaded/model_only_hf_checkpoint/hf_checkpoint/step-10/",
+    )
+else:
+    checkpoint_path = (
+        "artifacts-to-be-uploaded/model_only_hf_checkpoint/hf_checkpoint/step-10/"
+    )
 
 
 def build_features_test_list() -> list[OverrideDefinitions]:
@@ -65,17 +79,18 @@ def build_features_test_list() -> list[OverrideDefinitions]:
             "2d_compile",
         ),
         # TODO: re-enable this test once the async TP CI issue is fixed
-        # OverrideDefinitions(
-        #     [
-        #         [
-        #             "--compile.enable",
-        #             "--parallelism.tensor_parallel_degree 2",
-        #             "--parallelism.enable_async_tensor_parallel",
-        #         ],
-        #     ],
-        #     "2D async TP compile",
-        #     "2d_asynctp_compile",
-        # ),
+        OverrideDefinitions(
+            [
+                [
+                    "--compile.enable",
+                    "--parallelism.tensor_parallel_degree 2",
+                    "--parallelism.enable_async_tensor_parallel",
+                ],
+            ],
+            "2D async TP compile",
+            "2d_asynctp_compile",
+            disabled=True,
+        ),
         OverrideDefinitions(
             [
                 [
@@ -99,13 +114,14 @@ def build_features_test_list() -> list[OverrideDefinitions]:
                 ],
                 [
                     "--checkpoint.enable",
-                    "--checkpoint.initial_load_path artifacts-to-be-uploaded/model_only_hf_checkpoint/hf_checkpoint/step-10/",
+                    f"--checkpoint.initial_load_path {checkpoint_path}",
                     "--checkpoint.initial_load_model_only",
                     "--checkpoint.initial_load_in_hf",
                 ],
             ],
             "Checkpoint Integration Test - save load model only checkpoint in HF definition and format",
             "model_only_hf_checkpoint",
+            skip_rocm_test=True,
         ),
         OverrideDefinitions(
             [
@@ -432,16 +448,17 @@ def build_features_test_list() -> list[OverrideDefinitions]:
             "cpu_offload+opt_in_bwd+TP+DP+CP",
             ngpu=8,
         ),
-        # OverrideDefinitions(
-        #     [
-        #         [
-        #             "--memory_estimation.enable",
-        #         ]
-        #     ],
-        #     "FSDP2 Memory Tracking and Estimation",
-        #     "fsdp2_memory_estimation",
-        #     ngpu=2,
-        # ),
+        OverrideDefinitions(
+            [
+                [
+                    "--memory_estimation.enable",
+                ]
+            ],
+            "FSDP2 Memory Tracking and Estimation",
+            "fsdp2_memory_estimation",
+            ngpu=2,
+            disabled=True,
+        ),
         OverrideDefinitions(
             [
                 [
@@ -454,6 +471,7 @@ def build_features_test_list() -> list[OverrideDefinitions]:
             "Generation script test",
             "test_generate",
             ngpu=2,
+            skip_rocm_test=True,
         ),
         OverrideDefinitions(
             [
@@ -486,10 +504,10 @@ def build_features_test_list() -> list[OverrideDefinitions]:
         OverrideDefinitions(
             [
                 [
-                    "--model.converters float8",
-                    "--float8.enable_fsdp_float8_all_gather",
-                    "--float8.precompute_float8_dynamic_scale_for_fsdp",
-                    "--float8.emulate",
+                    "--model.converters quantize.linear.float8",
+                    "--quantize.linear.float8.enable_fsdp_float8_all_gather",
+                    "--quantize.linear.float8.precompute_float8_dynamic_scale_for_fsdp",
+                    "--quantize.linear.float8.emulate",
                 ],
             ],
             "Float8 emulation test",
