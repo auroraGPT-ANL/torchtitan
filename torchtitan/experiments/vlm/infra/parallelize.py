@@ -18,7 +18,7 @@ from torchtitan.distributed import ParallelDims
 from torchtitan.distributed.activation_checkpoint import apply_ac
 
 from torchtitan.models.llama3.infra.parallelize import (
-    _save_list as sac_save_list,
+    _op_sac_save_list,
     apply_compile,
     apply_ddp,
 )
@@ -48,9 +48,9 @@ def parallelize_vlm(
         Sequence length {job_config.training.seq_len} must be divisible by the product of TP degree
         ({parallel_dims.tp}) and 2 * CP degree ({parallel_dims.cp}).
         """
-    use_flex_attn = getattr(model.model_args, "use_flex_attn", False)
-    if job_config.parallelism.context_parallel_degree > 1 and use_flex_attn:
-        raise NotImplementedError("CP support for FlexAttention is still in progress.")
+    attn_type = getattr(model.model_args, "attn_type", "sdpa")
+    if job_config.parallelism.context_parallel_degree > 1 and attn_type != "sdpa":
+        raise NotImplementedError("CP support is only supported for SDPA.")
 
     if parallel_dims.tp_enabled:
         raise NotImplementedError("TP support for VLM training is still in progress.")
@@ -58,20 +58,21 @@ def parallelize_vlm(
     model_compile_enabled = (
         job_config.compile.enable and "model" in job_config.compile.components
     )
+    use_flex_attn = attn_type == "flex"
     if job_config.activation_checkpoint.mode != "none":
         apply_ac(
             model,
             job_config.activation_checkpoint,
             model_compile_enabled=model_compile_enabled,
             use_flex_attn=use_flex_attn,
-            save_list=sac_save_list,
+            op_sac_save_list=_op_sac_save_list,
         )
         apply_ac(model.encoder, job_config.activation_checkpoint)
 
     # turn on per-TransformerBlock compile after AC wrapping and before FSDP
     if job_config.compile.enable:
-        apply_compile(model)
-        apply_compile(model.encoder)
+        apply_compile(model, job_config.compile)
+        apply_compile(model.encoder, job_config.compile)
 
     if parallel_dims.fsdp_enabled:
         # apply FSDP or HSDP, potentially with Context Parallel
@@ -107,7 +108,6 @@ def parallelize_vlm(
             model,
             world_mesh,
             enable_compile=job_config.compile.enable,
-            enable_compiled_autograd=job_config.parallelism.enable_compiled_autograd,
         )
 
     return model
