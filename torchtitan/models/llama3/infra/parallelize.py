@@ -23,6 +23,7 @@ from torch.distributed.tensor.parallel import (
 )
 
 from torchtitan.config import JobConfig, TORCH_DTYPE_MAP
+from torchtitan.config.job_config import Compile as CompileConfig
 from torchtitan.distributed import ParallelDims
 from torchtitan.distributed.activation_checkpoint import apply_ac
 from torchtitan.distributed.tensor_parallel import maybe_enable_async_tp
@@ -30,16 +31,21 @@ from torchtitan.tools.logging import logger
 
 
 # for selective op activation checkpointing
-_save_list = {
+_op_sac_save_list = {
     torch.ops.aten.mm.default,
     torch.ops.aten._scaled_dot_product_efficient_attention.default,
     torch.ops.aten._scaled_dot_product_flash_attention.default,
+    torch.ops.aten._scaled_dot_product_cudnn_attention.default,
+    torch.ops.aten._scaled_dot_product_attention_math.default,
+    torch.ops.aten._scaled_dot_product_fused_attention_overrideable.default,
     torch.ops._c10d_functional.reduce_scatter_tensor.default,
     # for low precision training, it's useful to always save
     # the result of max, since the absolute maximum is
     # used to compute the scaling factor for quantization.
     torch.ops.aten.max.default,
     torch._higher_order_ops.flex_attention,
+    torch.ops.torch_attn._varlen_attn.default,
+    torch._higher_order_ops.inductor_compiled_code,
 }
 
 
@@ -66,13 +72,9 @@ def parallelize_llama(
         ({parallel_dims.tp}) and 2 * CP degree ({parallel_dims.cp}).
         """
 
-    use_flex_attn = getattr(model.model_args, "use_flex_attn", False)
-    if job_config.parallelism.context_parallel_degree > 1 and use_flex_attn:
-        raise NotImplementedError("CP support for FlexAttention is still in progress.")
-
     if parallel_dims.tp_enabled:
         enable_float8_linear = "float8" in job_config.model.converters
-        float8_is_rowwise = job_config.float8.recipe_name in (
+        float8_is_rowwise = job_config.quantize.linear.float8.recipe_name in (
             "rowwise",
             "rowwise_with_gw_hp",
         )
@@ -99,13 +101,14 @@ def parallelize_llama(
             model,
             job_config.activation_checkpoint,
             model_compile_enabled=model_compile_enabled,
-            use_flex_attn=use_flex_attn,
-            save_list=_save_list,
+            # pyrefly: ignore [bad-argument-type]
+            op_sac_save_list=_op_sac_save_list,
+            base_folder=job_config.job.dump_folder,
         )
 
     # turn on per-TransformerBlock compile after AC wrapping and before FSDP
     if model_compile_enabled:
-        apply_compile(model)
+        apply_compile(model, job_config.compile)
 
     if parallel_dims.fsdp_enabled:
         # apply FSDP or HSDP, potentially with Context Parallel
@@ -141,7 +144,6 @@ def parallelize_llama(
             model,
             world_mesh,
             enable_compile=model_compile_enabled,
-            enable_compiled_autograd=job_config.parallelism.enable_compiled_autograd,
         )
 
     return model
@@ -201,12 +203,15 @@ def apply_tp(
     # NOTE: At the cost of model code change, we can accelerate Sequence Parallel
     #       by folding (and unfolding) the batch dimension and the sequence dimension.
     #       Examples can be found at https://github.com/pytorch/torchtitan/pull/437
+    # pyrefly: ignore [not-callable]
     for transformer_block in model.layers.values():
         layer_plan = {
             "attention_norm": SequenceParallel(),
+            # NOTE: when the fourth argument (positions) is not None, its input layout
+            # and desired input layout should be Replicate()
             "attention": prepare_module_input(
-                input_layouts=(Shard(1), None),
-                desired_input_layouts=(Replicate(), None),
+                input_layouts=(Shard(1), None, None, None),
+                desired_input_layouts=(Replicate(), None, None, None),
             ),
             "attention.wq": colwise_parallel(),
             "attention.wk": colwise_parallel(),
@@ -223,8 +228,10 @@ def apply_tp(
         }
 
         parallelize_module(
+            # pyrefly: ignore [bad-argument-type]
             module=transformer_block,
             device_mesh=tp_mesh,
+            # pyrefly: ignore [bad-argument-type]
             parallelize_plan=layer_plan,
         )
 
@@ -234,13 +241,17 @@ def apply_tp(
     )
 
 
-def apply_compile(model: nn.Module):
+def apply_compile(model: nn.Module, compile_config: CompileConfig):
     """
     Apply torch.compile to each TransformerBlock, which makes compilation efficient due to
     repeated structure. Alternatively one can compile the whole model (after applying DP).
     """
+    # pyrefly: ignore [missing-attribute]
     for layer_id, transformer_block in model.layers.named_children():
-        transformer_block = torch.compile(transformer_block, fullgraph=True)
+        transformer_block = torch.compile(
+            transformer_block, backend=compile_config.backend, fullgraph=True
+        )
+        # pyrefly: ignore [missing-attribute]
         model.layers.register_module(layer_id, transformer_block)
 
     logger.info("Compiling each TransformerBlock with torch.compile")
@@ -275,6 +286,7 @@ def apply_fsdp(
     mp_policy = MixedPrecisionPolicy(param_dtype=param_dtype, reduce_dtype=reduce_dtype)
     fsdp_config = {"mesh": dp_mesh, "mp_policy": mp_policy}
     if cpu_offload:
+        # pyrefly: ignore [bad-typed-dict-key]
         fsdp_config["offload_policy"] = CPUOffloadPolicy()
 
     match reshard_after_forward_policy:
@@ -292,11 +304,13 @@ def apply_fsdp(
             )
 
     if model.tok_embeddings is not None:
+        # pyrefly: ignore [no-matching-overload]
         fully_shard(
             model.tok_embeddings,
             **fsdp_config,
             reshard_after_forward=reshard_after_forward,
         )
+    # pyrefly: ignore [missing-attribute]
     for layer_id, transformer_block in model.layers.items():
         fully_shard(
             transformer_block,
@@ -306,6 +320,7 @@ def apply_fsdp(
     # As an optimization, do not reshard_after_forward the last layers by default
     # since FSDP would prefetch them immediately after the forward pass
     if model.norm is not None and model.output is not None:
+        # pyrefly: ignore [no-matching-overload]
         fully_shard(
             [model.norm, model.output],
             **fsdp_config,
@@ -318,16 +333,11 @@ def apply_ddp(
     model: nn.Module,
     dp_mesh: DeviceMesh,
     enable_compile: bool,
-    enable_compiled_autograd: bool,
 ):
     if enable_compile:
-        if enable_compiled_autograd:
-            torch._dynamo.config.optimize_ddp = (
-                "python_reducer_without_compiled_forward"
-            )
-        else:
-            torch._dynamo.config.optimize_ddp = "ddp_optimizer"
+        torch._dynamo.config.optimize_ddp = "ddp_optimizer"
 
+    # pyrefly: ignore [invalid-param-spec]
     replicate(model, device_mesh=dp_mesh, bucket_cap_mb=100)
 
     logger.info("Applied DDP to the model")
