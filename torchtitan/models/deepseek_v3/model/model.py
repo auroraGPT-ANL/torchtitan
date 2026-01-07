@@ -5,13 +5,20 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import Tuple
 
 import torch
 from torch import nn
-
-from torchtitan.models.attention import build_attention
-from torchtitan.models.moe import FeedForward, MoE
+from torch.nn.attention.flex_attention import and_masks, BlockMask
+from torchtitan.components.tokenizer import BaseTokenizer
+from torchtitan.models.attention import (
+    create_attention_mask,
+    FlexAttentionWrapper,
+    get_causal_mask_mod,
+    get_document_mask_mod,
+    ScaledDotProductAttentionWrapper,
+)
+from torchtitan.models.moe import build_moe, FeedForward
+from torchtitan.protocols.model import AttentionMasksType
 from torchtitan.protocols.train_spec import ModelProtocol
 
 from .args import DeepSeekV3ModelArgs
@@ -58,7 +65,7 @@ def precompute_freqs_cis(args: DeepSeekV3ModelArgs) -> torch.Tensor:
 
     def find_correction_range(
         low_rot: float, high_rot: float, dim: int, base: float, max_seq_len: int
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         Computes the range of correction dimensions for rotary positional embeddings.
 
@@ -70,7 +77,7 @@ def precompute_freqs_cis(args: DeepSeekV3ModelArgs) -> torch.Tensor:
             max_seq_len (int): Maximum sequence length.
 
         Returns:
-            Tuple[int, int]: The range of correction dimensions (low, high), clamped to valid indices.
+            tuple[int, int]: The range of correction dimensions (low, high), clamped to valid indices.
         """
         low = math.floor(find_correction_dim(low_rot, dim, base, max_seq_len))
         high = math.ceil(find_correction_dim(high_rot, dim, base, max_seq_len))
@@ -117,20 +124,71 @@ def precompute_freqs_cis(args: DeepSeekV3ModelArgs) -> torch.Tensor:
     return freqs_cis
 
 
-def apply_rotary_emb(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+def reshape_for_broadcast(
+    freqs_cis: torch.Tensor, x: torch.Tensor, positions: torch.Tensor | None = None
+) -> torch.Tensor:
+    """
+    Reshape frequency tensor for broadcasting it with another tensor.
+
+    This function reshapes the frequency tensor to have the same shape as the target tensor 'x'
+    for the purpose of broadcasting the frequency tensor during element-wise operations.
+
+    The input freqs_cis tensor is assumed to be of shape (max_seqlen, dim // 2),
+    and the first seqlen elements will be sliced, but dim must match x.
+
+    Args:
+        freqs_cis (torch.Tensor): Frequency tensor to be reshaped.
+        x (torch.Tensor): Target tensor for broadcasting compatibility.
+        positions (torch.Tensor | None): Position indices used to access/shuffle RoPE cache.
+            Shape is (1, seqlen) or (bz, seqlen). Defaults to None.
+
+    Returns:
+        torch.Tensor: Reshaped frequency tensor.
+    """
+    ndim = x.ndim
+    assert ndim > 1
+    seqlen = x.shape[1]
+    if positions is None:
+        freqs_cis = freqs_cis[0:seqlen]
+        assert freqs_cis.shape == (seqlen, x.shape[-1])
+        shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+        return freqs_cis.view(*shape)
+    elif positions.size(0) == 1:
+        assert positions.shape == (1, seqlen)
+        freqs_cis = freqs_cis[positions.squeeze(0)]
+        assert freqs_cis.shape == (seqlen, x.shape[-1])
+        shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+        return freqs_cis.view(*shape)
+    else:
+        assert positions.shape == (x.shape[0], seqlen)
+        freqs_cis_expanded = freqs_cis[None, :, None, :].expand(x.shape[0], -1, -1, -1)
+        freqs_cis = torch.gather(
+            freqs_cis_expanded,
+            dim=1,
+            index=positions.view(x.shape[0], seqlen, 1, 1).expand(
+                x.shape[0], seqlen, 1, freqs_cis_expanded.shape[-1]
+            ),
+        )
+        return freqs_cis
+
+
+def apply_rotary_emb(
+    x: torch.Tensor, freqs_cis: torch.Tensor, positions: torch.Tensor | None = None
+) -> torch.Tensor:
     """
     Applies rotary positional embeddings to the input tensor.
 
     Args:
         x (torch.Tensor): Input tensor with positional embeddings to be applied.
         freqs_cis (torch.Tensor): Precomputed complex exponential values for positional embeddings.
+        positions (torch.Tensor | None): Position indices used to access/shuffle RoPE cache. Defaults to None.
 
     Returns:
         torch.Tensor: Tensor with rotary embeddings applied.
     """
     dtype = x.dtype
     x = torch.view_as_complex(x.float().view(*x.shape[:-1], -1, 2))
-    freqs_cis = freqs_cis.view(1, x.size(1), 1, x.size(-1))
+    freqs_cis = reshape_for_broadcast(freqs_cis, x, positions)
     y = torch.view_as_real(x * freqs_cis).flatten(3)
     return y.to(dtype)
 
@@ -175,12 +233,24 @@ class Attention(nn.Module):
             mscale = 0.1 * model_args.mscale * math.log(model_args.rope_factor) + 1.0
             self.softmax_scale = self.softmax_scale * mscale * mscale
 
-        self.sdpa = build_attention(model_args.use_flex_attn, model_args.attn_mask_type)
+        self.attn_type = model_args.attn_type
+        match self.attn_type:
+            case "flex":
+                self.inner_attention = FlexAttentionWrapper()
+            case "sdpa":
+                # pyrefly: ignore [bad-assignment]
+                self.inner_attention = ScaledDotProductAttentionWrapper()
+            case "varlen":
+                raise ValueError("Varlen attention is not supported with Deepseek V3.")
+            case _:
+                raise ValueError(f"Unknown attention type: {self.attn_type}")
 
     def forward(
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
+        attention_masks: AttentionMasksType | None,
+        positions: torch.Tensor | None = None,
     ):
         """
         Forward pass for the Multi-Head Latent Attention (MLA) Layer.
@@ -188,6 +258,8 @@ class Attention(nn.Module):
         Args:
             x (torch.Tensor): Input tensor of shape (batch_size, seq_len, dim).
             freqs_cis (torch.Tensor): Precomputed complex exponential values for rotary embeddings.
+            attention_masks (AttentionMasksType | None): Masks used when calculating attention scores.
+            positions (torch.Tensor | None): Position indices used to access/shuffle RoPE cache. Defaults to None.
 
         Returns:
             torch.Tensor: Output tensor with the same shape as the input.
@@ -207,7 +279,7 @@ class Attention(nn.Module):
         q_nope, q_pe = torch.split(
             q, [self.qk_nope_head_dim, self.qk_rope_head_dim], dim=-1
         )
-        q_pe = apply_rotary_emb(q_pe, freqs_cis)
+        q_pe = apply_rotary_emb(q_pe, freqs_cis, positions)
         q = torch.cat([q_nope, q_pe], dim=-1)  # (bsz, seqlen, n_heads, qk_head_dim)
 
         # Key-value projection
@@ -215,7 +287,7 @@ class Attention(nn.Module):
         kv, k_pe = torch.split(kv, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1)
 
         k_pe = apply_rotary_emb(
-            k_pe.unsqueeze(2), freqs_cis
+            k_pe.unsqueeze(2), freqs_cis, positions
         )  # (bsz, seqlen, 1, qk_rope_head_dim)
 
         kv = self.wkv_b(
@@ -231,7 +303,15 @@ class Attention(nn.Module):
         k = k.transpose(1, 2)  # (bsz, n_heads, seqlen, qk_head_dim)
         v = v.transpose(1, 2)  # (bsz, n_heads, seqlen, v_head_dim)
 
-        output = self.sdpa(q, k, v, scale=self.softmax_scale)
+        match self.attn_type:
+            case "flex":
+                assert isinstance(attention_masks, BlockMask)
+                output = self.inner_attention(
+                    q, k, v, block_mask=attention_masks, scale=self.softmax_scale
+                )
+            case _:
+                assert attention_masks is None
+                output = self.inner_attention(q, k, v, scale=self.softmax_scale)
 
         # Reshape and project output
         output = output.transpose(
@@ -273,10 +353,11 @@ class TransformerBlock(nn.Module):
 
         self.moe_enabled = layer_id >= model_args.n_dense_layers
         if self.moe_enabled:
-            self.moe = MoE(
-                model_args.moe_args,
+            self.moe = build_moe(
+                args=model_args.moe_args,
                 dim=model_args.dim,
                 hidden_dim=model_args.moe_inter_dim,
+                moe_impl=model_args.moe_impl,
             )
         else:
             self.feed_forward = FeedForward(model_args.dim, model_args.inter_dim)
@@ -284,18 +365,28 @@ class TransformerBlock(nn.Module):
         self.weight_init_std = 0.02 / (2 * (layer_id + 1)) ** 0.5
         self.layer_id = layer_id
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor):
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        attention_masks: AttentionMasksType | None,
+        positions: torch.Tensor | None = None,
+    ):
         """
         Forward pass for the Transformer block.
 
         Args:
             x (torch.Tensor): Input tensor of shape (batch_size, seq_len, dim).
             freqs_cis (torch.Tensor): Precomputed complex exponential values for rotary embeddings.
+            attention_masks (AttentionMasksType | None): Masks used when calculating attention scores.
+            positions (torch.Tensor | None): Position indices used to access/shuffle RoPE cache. Defaults to None.
 
         Returns:
             torch.Tensor: Output tensor with the same shape as the input.
         """
-        x = x + self.attention(self.attention_norm(x), freqs_cis)
+        x = x + self.attention(
+            self.attention_norm(x), freqs_cis, attention_masks, positions
+        )
         if self.moe_enabled:
             x = x + self.moe(self.ffn_norm(x))
         else:
@@ -307,6 +398,7 @@ class TransformerBlock(nn.Module):
             norm.reset_parameters()
         self.attention.init_weights(self.weight_init_std)
         if self.moe_enabled:
+            # pyrefly: ignore [not-callable, missing-attribute]
             self.moe.init_weights(self.weight_init_std, buffer_device)
         else:
             self.feed_forward.init_weights(self.weight_init_std)
@@ -346,6 +438,7 @@ class DeepSeekV3Model(nn.Module, ModelProtocol):
             nn.init.normal_(self.tok_embeddings.weight)
         for layer in self.layers.values():
             if layer is not None:
+                # pyrefly: ignore [not-callable]
                 layer.init_weights(buffer_device=buffer_device)
         if self.norm is not None:
             self.norm.reset_parameters()
@@ -360,10 +453,32 @@ class DeepSeekV3Model(nn.Module, ModelProtocol):
                 b=cutoff_factor * final_out_std,
             )
 
+    def get_attention_masks(
+        self,
+        input_batch: torch.Tensor,
+        tokenizer: BaseTokenizer,
+        extra_inputs: dict[str, torch.Tensor] | None = None,
+    ) -> AttentionMasksType:
+        mask_mods = [get_causal_mask_mod()]
+        match self.model_args.attn_mask_type:
+            case "causal":
+                B = 1
+            case "block_causal":
+                B = input_batch.shape[0]
+                mask_mods.append(get_document_mask_mod(input_batch, tokenizer.eos_id))
+            case _:
+                raise ValueError(
+                    f"Unknown attention mask type: {self.model_args.attn_mask_type}"
+                )
+        return create_attention_mask(
+            and_masks(*mask_mods), B, None, input_batch.shape[1], input_batch.shape[1]
+        )
+
     def forward(
         self,
         tokens: torch.Tensor,
-        input_batch: torch.Tensor | None = None,
+        attention_masks: AttentionMasksType | None = None,
+        positions: torch.Tensor | None = None,
     ):
         """
         Forward pass for the Transformer model.
@@ -373,10 +488,8 @@ class DeepSeekV3Model(nn.Module, ModelProtocol):
                 If pipeline parallelism is enabled, this will be the input token indices
                 for the ranks on the first pipeline stage. This will be the activation of the
                 previous pipeline stage if the current rank is not on the first stage.
-            input_batch (torch.Tensor): The input batch read from the dataloader.
-                This will always be the input batch regardless of the pipeline stage.
-                This field is required for non-first PP stages to perform document
-                masking attention (to analyze the boundary of the document).
+            attention_masks (AttentionMasksType | None): Masks used when calculating attention scores.
+            positions (torch.Tensor | None): Position indices used to access/shuffle RoPE cache. Defaults to None.
 
         Returns:
             torch.Tensor: Logits tensor of shape (batch_size, vocab_size).
@@ -385,7 +498,7 @@ class DeepSeekV3Model(nn.Module, ModelProtocol):
         h = self.tok_embeddings(tokens) if self.tok_embeddings is not None else tokens
 
         for layer in self.layers.values():
-            h = layer(h, self.freqs_cis)
+            h = layer(h, self.freqs_cis, attention_masks, positions)
         h = self.norm(h) if self.norm is not None else h
         output = self.output(h) if self.output is not None else h
         return output

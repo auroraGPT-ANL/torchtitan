@@ -64,8 +64,8 @@ class GarbageCollection:
         logger.info("[GC] %s took %.2f seconds", reason, time.monotonic() - begin)
 
 
-# hardcoded BF16 type peak flops for NVIDIA A100, H100, H200, B200 GPU and AMD MI250, MI300X, AMD MI325X and Intel PVC
-def get_peak_flops(device_name: str) -> int:
+# hardcoded BF16 type peak flops for NVIDIA A100, H100, H200, B200 GPU and AMD MI250, MI300X, MI325X, MI355X and Intel PVC
+def get_peak_flops(device_name: str) -> float:
     try:
         # Run the lspci command and capture the output
         result = subprocess.run(["lspci"], stdout=subprocess.PIPE, text=True)
@@ -97,6 +97,9 @@ def get_peak_flops(device_name: str) -> int:
     elif "B200" in device_name:
         # data from https://nvdam.widen.net/s/wwnsxrhm2w/blackwell-datasheet-3384703
         return 2.25e15
+    elif "MI355X" in device_name:
+        # MI355X data from https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html
+        return 2500e12
     elif "MI300X" in device_name or "MI325X" in device_name:
         # MI300X data from https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html
         # MI325X data from https://www.amd.com/en/products/accelerators/instinct/mi300/mi325x.html
@@ -202,3 +205,9 @@ def set_default_dtype(dtype: torch.dtype) -> Generator[None, None, None]:
         yield
     finally:
         torch.set_default_dtype(old_dtype)
+
+
+def _round_up(x: int, y: int) -> int:
+    """Round up x to the nearest multiple of y."""
+    x_ceil_div_y = (x + y - 1) // y
+    return x_ceil_div_y * y

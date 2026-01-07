@@ -5,13 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
-import logging
 import os
 import re
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Dict
 
-logger = logging.getLogger()
+from torch.distributed.checkpoint import HuggingFaceStorageReader
+
+from torchtitan.tools.logging import logger
 
 from .model import BaseModelArgs
 
@@ -25,6 +26,8 @@ class BaseStateDictAdapter(ABC):
         model_args: for initializing the model's memory space
         hf_assets_path: path to HF assets folder containing tokenizer, model weights, etc.
     """
+
+    fqn_to_index_mapping: Dict[Any, int] | None
 
     @abstractmethod
     def __init__(
@@ -58,6 +61,21 @@ class BaseStateDictAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_hf_storage_reader(
+        self, path: str, from_quantized: bool = False
+    ) -> HuggingFaceStorageReader:
+        """Returns hf storage reader to read HF checkpoint
+
+        Args:
+            path: the path to read HF checkpoint
+
+        Returns:
+            The HuggingFace storage reader to read from HF checkpoint
+
+        """
+        pass
+
 
 class StateDictAdapter(BaseStateDictAdapter):
     """State dict adapter base class which provides convenient default behavior to build fqn_to_index_mapping"""
@@ -82,7 +100,17 @@ class StateDictAdapter(BaseStateDictAdapter):
             if hf_safetensors_indx:
                 self.fqn_to_index_mapping = {}
                 for hf_key, raw_indx in hf_safetensors_indx["weight_map"].items():
+                    # pyrefly: ignore [missing-attribute]
                     indx = re.search(r"\d+", raw_indx).group(0)
                     self.fqn_to_index_mapping[hf_key] = int(indx)
             else:
                 self.fqn_to_index_mapping = None
+
+    def get_hf_storage_reader(
+        self, path: str, from_quantized: bool = False
+    ) -> HuggingFaceStorageReader:
+        if from_quantized:
+            logger.warning(
+                "Loading from quantized checkpoint format is not supported for this model."
+            )
+        return HuggingFaceStorageReader(path)

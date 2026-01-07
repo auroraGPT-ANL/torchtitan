@@ -5,7 +5,21 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import os
+
 from tests.integration_tests import OverrideDefinitions
+
+# Use RUNNER_TEMP if defined (GitHub Actions variable), else fallback to old path
+runner_temp = os.getenv("RUNNER_TEMP")
+if runner_temp:
+    checkpoint_path = os.path.join(
+        runner_temp,
+        "artifacts-to-be-uploaded/model_only_hf_checkpoint/hf_checkpoint/step-10/",
+    )
+else:
+    checkpoint_path = (
+        "artifacts-to-be-uploaded/model_only_hf_checkpoint/hf_checkpoint/step-10/"
+    )
 
 
 def build_features_test_list() -> list[OverrideDefinitions]:
@@ -65,17 +79,18 @@ def build_features_test_list() -> list[OverrideDefinitions]:
             "2d_compile",
         ),
         # TODO: re-enable this test once the async TP CI issue is fixed
-        # OverrideDefinitions(
-        #     [
-        #         [
-        #             "--compile.enable",
-        #             "--parallelism.tensor_parallel_degree 2",
-        #             "--parallelism.enable_async_tensor_parallel",
-        #         ],
-        #     ],
-        #     "2D async TP compile",
-        #     "2d_asynctp_compile",
-        # ),
+        OverrideDefinitions(
+            [
+                [
+                    "--compile.enable",
+                    "--parallelism.tensor_parallel_degree 2",
+                    "--parallelism.enable_async_tensor_parallel",
+                ],
+            ],
+            "2D async TP compile",
+            "2d_asynctp_compile",
+            disabled=True,
+        ),
         OverrideDefinitions(
             [
                 [
@@ -99,7 +114,7 @@ def build_features_test_list() -> list[OverrideDefinitions]:
                 ],
                 [
                     "--checkpoint.enable",
-                    "--checkpoint.initial_load_path artifacts-to-be-uploaded/model_only_hf_checkpoint/hf_checkpoint/step-10/",
+                    f"--checkpoint.initial_load_path {checkpoint_path}",
                     "--checkpoint.initial_load_model_only",
                     "--checkpoint.initial_load_in_hf",
                 ],
@@ -333,6 +348,20 @@ def build_features_test_list() -> list[OverrideDefinitions]:
         OverrideDefinitions(
             [
                 [
+                    "--parallelism.data_parallel_shard_degree=4",
+                    "--activation_checkpoint.mode=selective",
+                    "--activation_checkpoint.selective_ac_option=op",
+                    "--model.flavor=debugmodel_varlen_attn",
+                ]
+            ],
+            "FSDP+VARLEN_ATTN + per op SAC",
+            "fsdp+varlen_attn+per_op_sac",
+            ngpu=4,
+            skip_rocm_test=True,
+        ),
+        OverrideDefinitions(
+            [
+                [
                     "--parallelism.context_parallel_degree=4",
                     "--parallelism.context_parallel_rotate_method='allgather'",
                 ]
@@ -432,16 +461,17 @@ def build_features_test_list() -> list[OverrideDefinitions]:
             "cpu_offload+opt_in_bwd+TP+DP+CP",
             ngpu=8,
         ),
-        # OverrideDefinitions(
-        #     [
-        #         [
-        #             "--memory_estimation.enable",
-        #         ]
-        #     ],
-        #     "FSDP2 Memory Tracking and Estimation",
-        #     "fsdp2_memory_estimation",
-        #     ngpu=2,
-        # ),
+        OverrideDefinitions(
+            [
+                [
+                    "--memory_estimation.enable",
+                ]
+            ],
+            "FSDP2 Memory Tracking and Estimation",
+            "fsdp2_memory_estimation",
+            ngpu=2,
+            disabled=True,
+        ),
         OverrideDefinitions(
             [
                 [
@@ -454,6 +484,7 @@ def build_features_test_list() -> list[OverrideDefinitions]:
             "Generation script test",
             "test_generate",
             ngpu=2,
+            skip_rocm_test=True,
         ),
         OverrideDefinitions(
             [
@@ -486,10 +517,10 @@ def build_features_test_list() -> list[OverrideDefinitions]:
         OverrideDefinitions(
             [
                 [
-                    "--model.converters float8",
-                    "--float8.enable_fsdp_float8_all_gather",
-                    "--float8.precompute_float8_dynamic_scale_for_fsdp",
-                    "--float8.emulate",
+                    "--model.converters quantize.linear.float8",
+                    "--quantize.linear.float8.enable_fsdp_float8_all_gather",
+                    "--quantize.linear.float8.precompute_float8_dynamic_scale_for_fsdp",
+                    "--quantize.linear.float8.emulate",
                 ],
             ],
             "Float8 emulation test",
@@ -524,6 +555,21 @@ def build_features_test_list() -> list[OverrideDefinitions]:
             "Validation test with tp, cp, pp",
             "validation_tp_cp_pp",
             ngpu=8,
+        ),
+        OverrideDefinitions(
+            [
+                [
+                    "--training.dataloader.num_workers",
+                    "2",
+                    "--training.dataloader.pin_memory",
+                    "--training.dataloader.persistent_workers",
+                    "--training.dataloader.prefetch_factor",
+                    "4",
+                ],
+            ],
+            "Dataloader kwargs (via CLI args)",
+            "dataloader_kwargs",
+            ngpu=2,
         ),
     ]
 

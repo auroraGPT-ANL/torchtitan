@@ -33,10 +33,9 @@ def estimate_memory(job_config: JobConfig):
     # Get the world size
     world_size = int(os.environ["WORLD_SIZE"])
 
-    if job_config.compile.enable or job_config.parallelism.enable_compiled_autograd:
+    if job_config.compile.enable:
         logger.info("Compile mode is not supported yet. Switching to eager mode.")
         job_config.compile.enable = False
-        job_config.parallelism.enable_compiled_autograd = False
 
     # init fake pg
     store = FakeStore()
@@ -80,10 +79,7 @@ def estimate_memory(job_config: JobConfig):
     loss_parallel_enabled = (
         parallel_dims.tp_enabled and not parallelism_config.disable_loss_parallel
     )
-    train_context = dist_utils.get_train_context(
-        loss_parallel_enabled,
-        job_config.parallelism.enable_compiled_autograd,
-    )
+    train_context = dist_utils.get_train_context(loss_parallel_enabled)
 
     # build model (using meta init)
     model_args = train_spec.model_args[job_config.model.flavor]
@@ -95,51 +91,65 @@ def estimate_memory(job_config: JobConfig):
         else contextlib.nullcontext()
     ):
         logger.info(
-            f"Building {train_spec.name} {job_config.model.flavor} with {model_args}"
+            f"Building {job_config.model.name} {job_config.model.flavor} with {model_args}"
         )
         with torch.device("meta"):
             model = train_spec.model_cls(model_args)
 
         # Build the collection of model converters. No-op if `model.converters` empty
         model_converters = build_model_converters(job_config, parallel_dims)
+        # pyrefly: ignore [bad-argument-type]
         model_converters.convert(model)
 
         # apply PT-D DP/TP parallelisms and activation checkpointing
         train_spec.parallelize_fn(model, parallel_dims, job_config)
 
+        # pyrefly: ignore [missing-attribute]
         model.to_empty(device="cuda")
         if not active_fake_mode():
             model.init_weights()
+        # pyrefly: ignore [missing-attribute]
         model.train()
 
         # build optimizer after applying parallelisms to the model
+        # pyrefly: ignore [bad-argument-type]
         optimizers = build_optimizers([model], job_config.optimizer, parallel_dims)
         lr_schedulers = build_lr_schedulers(
-            optimizers.optimizers, job_config.lr_scheduler, job_config.training.steps
+            # pyrefly: ignore [bad-argument-type]
+            optimizers.optimizers,
+            job_config.lr_scheduler,
+            job_config.training.steps,
         )
         # Post optimizer step model converters hook.
         # e.g. calculate float8 dynamic amax/scale for all-parameter for FSDP2
         # where it issues a single all-reduce for all parameters at once for better performance
         optimizers.register_step_post_hook(
+            # pyrefly: ignore [bad-argument-type]
             lambda *args, **kwargs: model_converters.post_optimizer_hook(model)
         )
 
+        # pyrefly: ignore [missing-attribute]
         logger.info(f"Vocab size: {model_args.vocab_size}")
         # Create a dummy batch instead of loading from a dataset
         batch = (
             torch.randint(
                 0,
+                # pyrefly: ignore [missing-attribute]
                 model_args.vocab_size,
+                # pyrefly: ignore [missing-attribute]
                 (job_config.training.local_batch_size, model_args.max_seq_len),
                 device="cuda",
             ),
             torch.randint(
                 0,
+                # pyrefly: ignore [missing-attribute]
                 model_args.vocab_size,
+                # pyrefly: ignore [missing-attribute]
                 (job_config.training.local_batch_size, model_args.max_seq_len),
                 device="cuda",
             ),
         )
+        # pyrefly: ignore [bad-argument-type]
         fsdp_memtracker = FSDPMemTracker(mod=model, optm=optimizers.optimizers[0])
         fsdp_memtracker.track_inputs(batch)
 
@@ -149,6 +159,7 @@ def estimate_memory(job_config: JobConfig):
                 input_ids, labels = batch
                 # train step
                 with train_context():
+                    # pyrefly: ignore [not-callable]
                     pred = model(input_ids)
                     loss = loss_fn(pred, labels)
                     del pred
@@ -156,7 +167,10 @@ def estimate_memory(job_config: JobConfig):
 
                 # clip gradients
                 torch.nn.utils.clip_grad_norm_(
-                    model.parameters(), job_config.training.max_norm, foreach=True
+                    # pyrefly: ignore [missing-attribute]
+                    model.parameters(),
+                    job_config.training.max_norm,
+                    foreach=True,
                 )
                 # optimizer step
                 optimizers.step()

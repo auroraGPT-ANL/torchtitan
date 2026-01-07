@@ -11,6 +11,7 @@ including images and text. Images are interleaved with text at native aspect rat
 It supports both streaming and non-streaming datasets from HuggingFace.
 """
 
+from dataclasses import asdict
 from typing import Any, Callable
 
 import torch
@@ -22,7 +23,7 @@ from torch.utils.data import IterableDataset
 from torchtitan.components.dataloader import ParallelAwareDataloader
 from torchtitan.components.tokenizer import BaseTokenizer, HuggingFaceTokenizer
 from torchtitan.config import JobConfig
-from torchtitan.datasets import DatasetConfig
+from torchtitan.hf_datasets import DatasetConfig
 from torchtitan.tools.logging import logger
 
 from ..model.args import SpecialTokens
@@ -199,6 +200,14 @@ MM_DATASETS = {
         loader=lambda path: load_dataset(path, split="train", streaming=True),
         sample_processor=_process_cc12_wd_sample,
     ),
+    "cc12m-test": DatasetConfig(
+        # TODO: move test cc12m dataset to core test folder
+        path="tests/assets/cc12m_test",
+        loader=lambda path: load_dataset(
+            path, split="train", data_files={"train": "*.tar"}, streaming=True
+        ),
+        sample_processor=_process_cc12_wd_sample,
+    ),
 }
 
 
@@ -218,8 +227,8 @@ def _validate_mm_dataset(
     return path, config.loader, config.sample_processor
 
 
-class MultiModalDataset(IterableDataset, Stateful):
-    """MultiModal Dataset with support for sample packing."""
+class HuggingFaceMultiModalDataset(IterableDataset, Stateful):
+    """HuggingFace MultiModal Dataset with support for sample packing."""
 
     def __init__(
         self,
@@ -373,14 +382,14 @@ def build_mm_dataloader(
     """Build a data loader for multimodal datasets.
 
     Args:
-        dp_world_size: Data parallel world size
-        dp_rank: Data parallel rank
-        tokenizer: Tokenizer for text processing
-        job_config: Job configuration
-        infinite: Whether to loop infinitely
+        dp_world_size: Data parallel world size.
+        dp_rank: Data parallel rank.
+        tokenizer: Tokenizer for text processing.
+        job_config: Job configuration containing dataset and DataLoader settings.
+        infinite: Whether to loop infinitely.
 
     Returns:
-        DataLoader with appropriate parallelism handling
+        DataLoader with appropriate parallelism handling.
     """
     dataset_path = job_config.training.dataset_path
     batch_size = job_config.training.local_batch_size
@@ -395,7 +404,7 @@ def build_mm_dataloader(
     packing_buffer_size = job_config.data.packing_buffer_size
     special_tokens = SpecialTokens.from_tokenizer(tokenizer)
 
-    dataset = MultiModalDataset(
+    dataset = HuggingFaceMultiModalDataset(
         dataset_name=job_config.training.dataset,
         dataset_path=dataset_path,
         tokenizer=tokenizer,
@@ -421,12 +430,17 @@ def build_mm_dataloader(
         special_tokens=special_tokens,
     )
 
+    dataloader_kwargs = {
+        **asdict(job_config.training.dataloader),
+        "batch_size": batch_size,
+        "collate_fn": collate_fn,
+    }
+
     base_dataloader = ParallelAwareDataloader(
         dataset=dataset,
         dp_rank=dp_rank,
         dp_world_size=dp_world_size,
-        batch_size=batch_size,
-        collate_fn=collate_fn,
+        **dataloader_kwargs,
     )
 
     return base_dataloader
